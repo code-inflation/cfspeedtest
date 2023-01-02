@@ -11,9 +11,23 @@ fn main() {
 }
 
 fn speed_test(client: Client) {
+    test_latency(&client);
+    // fetch_server_loc_data();
+    // fetch_cdncgi_trace();
     test_downloads(&client);
     test_uploads(&client);
-    test_latency(&client);
+}
+
+fn fetch_cdncgi_trace() {
+    todo!()
+}
+
+fn fetch_server_loc_data() {
+    todo!()
+}
+
+fn print_boxplot() {
+    todo!()
 }
 
 fn test_uploads(client: &Client) {
@@ -26,7 +40,7 @@ fn test_downloads(client: &Client) {
 
 fn test_latency(client: &Client) {
     for _ in 0..10 {
-        test_download(client, 10);
+        test_download(client, 1);
     }
 }
 
@@ -39,7 +53,7 @@ fn test_upload(client: &Client, bytes: usize) {
 }
 
 fn test_download(client: &Client, bytes: usize) {
-    let url = &format!("{}/{}{}", BASE_URL, DOWNLOAD_URL, bytes);
+let url = &format!("{}/{}{}", BASE_URL, DOWNLOAD_URL, bytes);
     let status_code = client.get(url).send().unwrap().status();
     println!("download with {} bytes -> post: {}", bytes, status_code);
 }
