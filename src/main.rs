@@ -12,26 +12,35 @@ fn main() -> Result<(), reqwest::Error> {
 }
 
 fn speed_test(client: Client) {
-    test_download(&client);
-    test_upload(&client);
+    test_downloads(&client);
+    test_uploads(&client);
     test_latency(&client);
+}
+
+fn test_uploads(client: &Client) {
+    test_upload(client, 1024);
+}
+
+fn test_downloads(client: &Client) {
+    test_download(client, 1024);
 }
 
 fn test_latency(client: &Client) {
     for _ in 0..10 {
-        test_download(client);
+        test_download(client, 10);
     }
 }
 
-fn test_upload(client: &Client) {
+fn test_upload(client: &Client, bytes: usize) {
     let url = &format!("{}/{}", BASE_URL, UPLOAD_URL);
-    let response = client.post(url).body("test body").send().unwrap();
+    let payload: Vec<u8> = vec![1; bytes];
+    let response = client.post(url).body(payload).send().unwrap();
     let status_code = response.status();
-    println!("post: {}", status_code);
+    println!("upload with {} bytes -> post: {}", bytes, status_code);
 }
 
-fn test_download(client: &Client) {
-    let url = &format!("{}/{}{}", BASE_URL, DOWNLOAD_URL, 1024);
+fn test_download(client: &Client, bytes: usize) {
+    let url = &format!("{}/{}{}", BASE_URL, DOWNLOAD_URL, bytes);
     let status_code = client.get(url).send().unwrap().status();
-    println!("get: {}", status_code);
+    println!("download with {} bytes -> post: {}", bytes, status_code);
 }
