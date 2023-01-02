@@ -4,11 +4,10 @@ const BASE_URL: &str = "https://speed.cloudflare.com";
 const DOWNLOAD_URL: &str = "__down?bytes=";
 const UPLOAD_URL: &str = "__up";
 
-fn main() -> Result<(), reqwest::Error> {
+fn main() {
     println!("Starting Cloudflare speed test");
     let client = reqwest::blocking::Client::new();
     speed_test(client);
-    Ok(())
 }
 
 fn speed_test(client: Client) {
