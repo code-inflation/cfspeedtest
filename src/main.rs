@@ -1,31 +1,37 @@
+use reqwest::blocking::Client;
+
 const BASE_URL: &str = "https://speed.cloudflare.com";
 const DOWNLOAD_URL: &str = "__down?bytes=";
+const UPLOAD_URL: &str = "__up";
 
-#[tokio::main]
-async fn main() -> Result<(), reqwest::Error> {
+fn main() -> Result<(), reqwest::Error> {
     println!("Starting Cloudflare speed test");
-    speed_test().await?;
+    let client = reqwest::blocking::Client::new();
+    speed_test(client);
     Ok(())
 }
 
-async fn speed_test() -> Result<(), reqwest::Error> {
-    test_download().await?;
-    test_upload().await?;
-    test_latency().await?;
-    Ok(())
+fn speed_test(client: Client) {
+    test_download(&client);
+    test_upload(&client);
+    test_latency(&client);
 }
 
-async fn test_latency() -> Result<(), reqwest::Error> {
-    todo!()
+fn test_latency(client: &Client) {
+    for _ in 0..10 {
+        test_download(client);
+    }
 }
 
-async fn test_upload() -> Result<(), reqwest::Error> {
-    todo!()
+fn test_upload(client: &Client) {
+    let url = &format!("{}/{}", BASE_URL, UPLOAD_URL);
+    let response = client.post(url).body("test body").send().unwrap();
+    let status_code = response.status();
+    println!("post: {}", status_code);
 }
 
-async fn test_download() -> Result<(), reqwest::Error> {
+fn test_download(client: &Client) {
     let url = &format!("{}/{}{}", BASE_URL, DOWNLOAD_URL, 1024);
-    let body = reqwest::get(url).await?;
-    println!("{:?}", body.text().await?);
-    Ok(())
+    let status_code = client.get(url).send().unwrap().status();
+    println!("get: {}", status_code);
 }
