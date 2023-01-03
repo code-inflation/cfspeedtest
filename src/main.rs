@@ -1,8 +1,12 @@
 use reqwest::{
     blocking::{Client, RequestBuilder},
+    header::HeaderValue,
     StatusCode,
 };
-use std::time::{Duration, Instant};
+use std::{
+    fmt::Display,
+    time::{Duration, Instant},
+};
 
 const BASE_URL: &str = "http://speed.cloudflare.com";
 const DOWNLOAD_URL: &str = "__down?bytes=";
@@ -16,19 +20,11 @@ fn main() {
 }
 
 fn speed_test(client: Client) {
+    let metadata = fetch_metadata(&client);
+    println!("{}", metadata);
     test_latency(&client);
-    // fetch_server_loc_data();
-    // fetch_cdncgi_trace();
     test_downloads(&client);
     test_uploads(&client);
-}
-
-fn fetch_cdncgi_trace() {
-    todo!()
-}
-
-fn fetch_server_loc_data() {
-    todo!()
 }
 
 fn print_boxplot() {
@@ -114,4 +110,72 @@ fn timed_send(req_builder: RequestBuilder, bytes: usize) -> (StatusCode, f64, Du
     let duration = start.elapsed();
     let mbits = (bytes as f64 * 8.0 / 1_000_000.0) / duration.as_secs_f64();
     (status_code, mbits, duration)
+}
+
+struct Metadata {
+    city: String,
+    country: String,
+    ip: String,
+    asn: String,
+    colo: String,
+}
+
+impl Display for Metadata {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "City: {}\nCountry: {}\nIp: {}\nAsn: {}\nColo: {}",
+            self.city, self.country, self.ip, self.asn, self.colo
+        )
+    }
+}
+
+fn fetch_metadata(client: &Client) -> Metadata {
+    // TODO fix this mess
+    let url = &format!("{}/{}{}", BASE_URL, DOWNLOAD_URL, 0);
+    let headers = client
+        .get(url)
+        .send()
+        .expect("failed to get response")
+        .headers()
+        .to_owned();
+
+    let city = headers
+        .get("cf-meta-city")
+        .unwrap_or(&HeaderValue::from_str("City N/A").unwrap())
+        .to_str()
+        .unwrap()
+        .to_owned();
+    let country = headers
+        .get("cf-meta-country")
+        .unwrap_or(&HeaderValue::from_str("Country N/A").unwrap())
+        .to_str()
+        .unwrap()
+        .to_owned();
+    let ip = headers
+        .get("cf-meta-ip")
+        .unwrap_or(&HeaderValue::from_str("IP N/A").unwrap())
+        .to_str()
+        .unwrap()
+        .to_owned();
+    let asn = headers
+        .get("cf-meta-asn")
+        .unwrap_or(&HeaderValue::from_str("ASN N/A").unwrap())
+        .to_str()
+        .unwrap()
+        .to_owned();
+    let colo = headers
+        .get("cf-meta-colo")
+        .unwrap_or(&HeaderValue::from_str("Colo N/A").unwrap())
+        .to_str()
+        .unwrap()
+        .to_owned();
+
+    Metadata {
+        city,
+        country,
+        ip,
+        asn,
+        colo,
+    }
 }
