@@ -12,9 +12,9 @@ const BASE_URL: &str = "http://speed.cloudflare.com";
 const DOWNLOAD_URL: &str = "__down?bytes=";
 const UPLOAD_URL: &str = "__up";
 const NR_TEST_RUNS: u32 = 1;
-const PAYLOAD_SIZES: [usize; 3] = [100_000, 1_000_000, 10_000_000];
+const PAYLOAD_SIZES: [usize; 4] = [100_000, 1_000_000, 10_000_000, 25_000_000];
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 enum TestType {
     Download,
     Upload,
@@ -27,6 +27,36 @@ struct Measurement {
     mbit: f64,
 }
 
+impl Display for Measurement {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{:?}: \t{}\t-> {}",
+            self.test_type,
+            format_bytes(self.payload_size),
+            self.mbit,
+        )
+    }
+}
+
+struct Metadata {
+    city: String,
+    country: String,
+    ip: String,
+    asn: String,
+    colo: String,
+}
+
+impl Display for Metadata {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "City: {}\nCountry: {}\nIp: {}\nAsn: {}\nColo: {}",
+            self.city, self.country, self.ip, self.asn, self.colo
+        )
+    }
+}
+
 fn main() {
     println!("Starting Cloudflare speed test");
     let client = reqwest::blocking::Client::new();
@@ -37,12 +67,8 @@ fn speed_test(client: Client) {
     let metadata = fetch_metadata(&client);
     println!("{}", metadata);
     test_latency(&client);
-    run_test(&client, test_download, TestType::Download);
-    run_test(&client, test_upload, TestType::Upload);
-}
-
-fn print_boxplot() {
-    todo!()
+    let _down_measurements = run_tests(&client, test_download, TestType::Download);
+    let _up_measurements = run_tests(&client, test_upload, TestType::Upload);
 }
 
 fn test_latency(client: &Client) {
@@ -52,7 +78,11 @@ fn test_latency(client: &Client) {
     // }
 }
 
-fn run_test(client: &Client, test_fn: fn(&Client, usize) -> f64, test_type: TestType) {
+fn run_tests(
+    client: &Client,
+    test_fn: fn(&Client, usize) -> f64,
+    test_type: TestType,
+) -> Vec<Measurement> {
     let mut measurements: Vec<Measurement> = Vec::new();
     for payload_size in PAYLOAD_SIZES {
         for _ in 0..NR_TEST_RUNS {
@@ -63,6 +93,16 @@ fn run_test(client: &Client, test_fn: fn(&Client, usize) -> f64, test_type: Test
                 mbit,
             });
         }
+        log_measurements(&measurements);
+    }
+    measurements
+}
+
+fn log_measurements(measurements: &[Measurement]) {
+    // TODO calculate stats on this
+    for measurement in measurements {
+        // TODO draw boxplot etc
+        println!("{}", measurement)
     }
 }
 
@@ -114,24 +154,6 @@ fn timed_send(
     let duration = start.elapsed();
     let mbits = (payload_size_bytes as f64 * 8.0 / 1_000_000.0) / duration.as_secs_f64();
     (status_code, mbits, duration)
-}
-
-struct Metadata {
-    city: String,
-    country: String,
-    ip: String,
-    asn: String,
-    colo: String,
-}
-
-impl Display for Metadata {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "City: {}\nCountry: {}\nIp: {}\nAsn: {}\nColo: {}",
-            self.city, self.country, self.ip, self.asn, self.colo
-        )
-    }
 }
 
 fn fetch_metadata(client: &Client) -> Metadata {
