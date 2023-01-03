@@ -12,6 +12,20 @@ const BASE_URL: &str = "http://speed.cloudflare.com";
 const DOWNLOAD_URL: &str = "__down?bytes=";
 const UPLOAD_URL: &str = "__up";
 const NR_TEST_RUNS: u32 = 1;
+const PAYLOAD_SIZES: [usize; 3] = [100_000, 1_000_000, 10_000_000];
+
+#[derive(Clone, Copy)]
+enum TestType {
+    Download,
+    Upload,
+    Latency,
+}
+
+struct Measurement {
+    test_type: TestType,
+    payload_size: usize,
+    mbit: f64,
+}
 
 fn main() {
     println!("Starting Cloudflare speed test");
@@ -23,39 +37,12 @@ fn speed_test(client: Client) {
     let metadata = fetch_metadata(&client);
     println!("{}", metadata);
     test_latency(&client);
-    test_downloads(&client);
-    test_uploads(&client);
+    run_test(&client, test_download, TestType::Download);
+    run_test(&client, test_upload, TestType::Upload);
 }
 
 fn print_boxplot() {
     todo!()
-}
-
-fn test_uploads(client: &Client) {
-    for _ in 0..NR_TEST_RUNS {
-        test_upload(client, 100_000);
-    }
-    for _ in 0..NR_TEST_RUNS {
-        test_upload(client, 1_000_000);
-    }
-    for _ in 0..NR_TEST_RUNS {
-        test_upload(client, 10_000_000);
-    }
-}
-
-fn test_downloads(client: &Client) {
-    for _ in 0..NR_TEST_RUNS {
-        test_download(client, 100_000);
-    }
-    for _ in 0..NR_TEST_RUNS {
-        test_download(client, 1_000_000);
-    }
-    for _ in 0..NR_TEST_RUNS {
-        test_download(client, 10_000_000);
-    }
-    // for _ in 0..NR_TEST_RUNS {
-    //     test_download(client, 100_000_000);
-    // }
 }
 
 fn test_latency(client: &Client) {
@@ -65,29 +52,43 @@ fn test_latency(client: &Client) {
     // }
 }
 
-fn test_upload(client: &Client, bytes: usize) -> f64 {
+fn run_test(client: &Client, test_fn: fn(&Client, usize) -> f64, test_type: TestType) {
+    let mut measurements: Vec<Measurement> = Vec::new();
+    for payload_size in PAYLOAD_SIZES {
+        for _ in 0..NR_TEST_RUNS {
+            let mbit = test_fn(client, payload_size);
+            measurements.push(Measurement {
+                test_type,
+                payload_size,
+                mbit,
+            });
+        }
+    }
+}
+
+fn test_upload(client: &Client, payload_size_bytes: usize) -> f64 {
     let url = &format!("{}/{}", BASE_URL, UPLOAD_URL);
-    let payload: Vec<u8> = vec![1; bytes];
+    let payload: Vec<u8> = vec![1; payload_size_bytes];
     let req_builder = client.post(url).body(payload);
-    let (status_code, mbits, duration) = timed_send(req_builder, bytes);
+    let (status_code, mbits, duration) = timed_send(req_builder, payload_size_bytes);
     println!(
         "upload {:.2} mbit/s with {} in {}ms -> post: {}",
         mbits,
-        format_bytes(bytes),
+        format_bytes(payload_size_bytes),
         duration.as_millis(),
         status_code
     );
     mbits
 }
 
-fn test_download(client: &Client, bytes: usize) -> f64 {
-    let url = &format!("{}/{}{}", BASE_URL, DOWNLOAD_URL, bytes);
+fn test_download(client: &Client, payload_size_bytes: usize) -> f64 {
+    let url = &format!("{}/{}{}", BASE_URL, DOWNLOAD_URL, payload_size_bytes);
     let req_builder = client.get(url);
-    let (status_code, mbits, duration) = timed_send(req_builder, bytes);
+    let (status_code, mbits, duration) = timed_send(req_builder, payload_size_bytes);
     println!(
         "download {:.2} mbit/s with {} in {}ms -> get: {}",
         mbits,
-        format_bytes(bytes),
+        format_bytes(payload_size_bytes),
         duration.as_millis(),
         status_code
     );
@@ -102,13 +103,16 @@ fn format_bytes(bytes: usize) -> String {
     }
 }
 
-fn timed_send(req_builder: RequestBuilder, bytes: usize) -> (StatusCode, f64, Duration) {
+fn timed_send(
+    req_builder: RequestBuilder,
+    payload_size_bytes: usize,
+) -> (StatusCode, f64, Duration) {
     let start = Instant::now();
     let response = req_builder.send().expect("failed to get response");
     let status_code = response.status();
     let _res_bytes = response.bytes();
     let duration = start.elapsed();
-    let mbits = (bytes as f64 * 8.0 / 1_000_000.0) / duration.as_secs_f64();
+    let mbits = (payload_size_bytes as f64 * 8.0 / 1_000_000.0) / duration.as_secs_f64();
     (status_code, mbits, duration)
 }
 
