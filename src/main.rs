@@ -31,7 +31,7 @@ fn print_boxplot() {
     todo!()
 }
 
-fn test_uploads(client: &Client) {
+fn test_uploads(client: Client) {
     for _ in 0..10 {
         test_upload(client, 100_000);
     }
