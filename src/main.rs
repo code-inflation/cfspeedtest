@@ -1,6 +1,7 @@
 use reqwest::blocking::Client;
+use std::time::Instant;
 
-const BASE_URL: &str = "https://speed.cloudflare.com";
+const BASE_URL: &str = "http://speed.cloudflare.com";
 const DOWNLOAD_URL: &str = "__down?bytes=";
 const UPLOAD_URL: &str = "__up";
 
@@ -31,29 +32,72 @@ fn print_boxplot() {
 }
 
 fn test_uploads(client: &Client) {
-    test_upload(client, 1024);
-}
-
-fn test_downloads(client: &Client) {
-    test_download(client, 1024);
-}
-
-fn test_latency(client: &Client) {
     for _ in 0..10 {
-        test_download(client, 1);
+        test_upload(client, 100_000);
+    }
+    for _ in 0..10 {
+        test_upload(client, 1_000_000);
     }
 }
 
-fn test_upload(client: &Client, bytes: usize) {
-    let url = &format!("{}/{}", BASE_URL, UPLOAD_URL);
-    let payload: Vec<u8> = vec![1; bytes];
-    let response = client.post(url).body(payload).send().unwrap();
-    let status_code = response.status();
-    println!("upload with {} bytes -> post: {}", bytes, status_code);
+fn test_downloads(client: &Client) {
+    for _ in 0..10 {
+        test_download(client, 100_000);
+    }
+    for _ in 0..10 {
+        test_download(client, 1_000_000);
+    }
 }
 
-fn test_download(client: &Client, bytes: usize) {
-let url = &format!("{}/{}{}", BASE_URL, DOWNLOAD_URL, bytes);
-    let status_code = client.get(url).send().unwrap().status();
-    println!("download with {} bytes -> post: {}", bytes, status_code);
+fn test_latency(client: &Client) {
+    // TODO measure time to first byte - server processing time
+    // for _ in 0..10 {
+    //     test_download(client, 1);
+    // }
+}
+
+fn test_upload(client: &Client, bytes: usize) -> f64 {
+    let url = &format!("{}/{}", BASE_URL, UPLOAD_URL);
+    let payload: Vec<u8> = vec![1; bytes];
+    let start = Instant::now();
+    let response = client.post(url).body(payload).send().unwrap();
+    let status_code = response.status();
+    let duration = start.elapsed();
+    let mbit = bytes as f64 * 8.0 / 1_000_000.0;
+    let mbits = mbit / duration.as_secs_f64();
+    println!(
+        "upload {:.2} mbit/s with {} in {}ms -> post: {}",
+        mbits,
+        format_bytes(bytes),
+        duration.as_millis(),
+        status_code
+    );
+    mbits
+}
+
+fn test_download(client: &Client, bytes: usize) -> f64 {
+    let url = &format!("{}/{}{}", BASE_URL, DOWNLOAD_URL, bytes);
+    let start = Instant::now();
+    let response = client.get(url).send().unwrap();
+    let status_code = response.status();
+    response.text().unwrap();
+    let duration = start.elapsed();
+    let mbit = bytes as f64 * 8.0 / 1_000_000.0;
+    let mbits = mbit / duration.as_secs_f64();
+    println!(
+        "download {:.2} mbit/s with {} in {}ms -> get: {}",
+        mbits,
+        format_bytes(bytes),
+        duration.as_millis(),
+        status_code
+    );
+    mbits
+}
+
+fn format_bytes(bytes: usize) -> String {
+    match bytes {
+        1_000..=999_999 => format!("{}KB", bytes / 1_000),
+        1_000_000..=999_999_999 => format!("{}MB", bytes / 1_000_000),
+        _ => format!("{} bytes", bytes),
+    }
 }
