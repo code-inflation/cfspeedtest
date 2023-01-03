@@ -7,6 +7,7 @@ use std::time::{Duration, Instant};
 const BASE_URL: &str = "http://speed.cloudflare.com";
 const DOWNLOAD_URL: &str = "__down?bytes=";
 const UPLOAD_URL: &str = "__up";
+const NR_TEST_RUNS: u32 = 1;
 
 fn main() {
     println!("Starting Cloudflare speed test");
@@ -35,20 +36,29 @@ fn print_boxplot() {
 }
 
 fn test_uploads(client: &Client) {
-    for _ in 0..10 {
+    for _ in 0..NR_TEST_RUNS {
         test_upload(client, 100_000);
     }
-    for _ in 0..10 {
+    for _ in 0..NR_TEST_RUNS {
         test_upload(client, 1_000_000);
+    }
+    for _ in 0..NR_TEST_RUNS {
+        test_upload(client, 10_000_000);
     }
 }
 
 fn test_downloads(client: &Client) {
-    for _ in 0..10 {
+    for _ in 0..NR_TEST_RUNS {
         test_download(client, 100_000);
     }
-    for _ in 0..10 {
+    for _ in 0..NR_TEST_RUNS {
         test_download(client, 1_000_000);
+    }
+    for _ in 0..NR_TEST_RUNS {
+        test_download(client, 10_000_000);
+    }
+    for _ in 0..NR_TEST_RUNS {
+        test_download(client, 100_000_000);
     }
 }
 
@@ -63,7 +73,7 @@ fn test_upload(client: &Client, bytes: usize) -> f64 {
     let url = &format!("{}/{}", BASE_URL, UPLOAD_URL);
     let payload: Vec<u8> = vec![1; bytes];
     let req_builder = client.post(url).body(payload);
-    let (_response, status_code, mbits, duration) = timed_send(req_builder, bytes);
+    let (status_code, mbits, duration) = timed_send(req_builder, bytes);
     println!(
         "upload {:.2} mbit/s with {} in {}ms -> post: {}",
         mbits,
@@ -77,7 +87,7 @@ fn test_upload(client: &Client, bytes: usize) -> f64 {
 fn test_download(client: &Client, bytes: usize) -> f64 {
     let url = &format!("{}/{}{}", BASE_URL, DOWNLOAD_URL, bytes);
     let req_builder = client.get(url);
-    let (_response, status_code, mbits, duration) = timed_send(req_builder, bytes);
+    let (status_code, mbits, duration) = timed_send(req_builder, bytes);
     println!(
         "download {:.2} mbit/s with {} in {}ms -> get: {}",
         mbits,
@@ -96,12 +106,12 @@ fn format_bytes(bytes: usize) -> String {
     }
 }
 
-fn timed_send(req_builder: RequestBuilder, bytes: usize) -> (Response, StatusCode, f64, Duration) {
+fn timed_send(req_builder: RequestBuilder, bytes: usize) -> (StatusCode, f64, Duration) {
     let start = Instant::now();
     let response = req_builder.send().unwrap();
     let status_code = response.status();
+    let _res_bytes = response.bytes();
     let duration = start.elapsed();
-    let mbit = bytes as f64 * 8.0 / 1_000_000.0;
-    let mbits = mbit / duration.as_secs_f64();
-    (response, status_code, mbits, duration)
+    let mbits = (bytes as f64 * 8.0 / 1_000_000.0) / duration.as_secs_f64();
+    (status_code, mbits, duration)
 }
