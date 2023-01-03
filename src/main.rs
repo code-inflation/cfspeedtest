@@ -1,5 +1,8 @@
-use reqwest::blocking::Client;
-use std::time::Instant;
+use reqwest::{
+    blocking::{Client, RequestBuilder, Response},
+    StatusCode,
+};
+use std::time::{Duration, Instant};
 
 const BASE_URL: &str = "http://speed.cloudflare.com";
 const DOWNLOAD_URL: &str = "__down?bytes=";
@@ -59,12 +62,8 @@ fn test_latency(client: &Client) {
 fn test_upload(client: &Client, bytes: usize) -> f64 {
     let url = &format!("{}/{}", BASE_URL, UPLOAD_URL);
     let payload: Vec<u8> = vec![1; bytes];
-    let start = Instant::now();
-    let response = client.post(url).body(payload).send().unwrap();
-    let status_code = response.status();
-    let duration = start.elapsed();
-    let mbit = bytes as f64 * 8.0 / 1_000_000.0;
-    let mbits = mbit / duration.as_secs_f64();
+    let req_builder = client.post(url).body(payload);
+    let (_response, status_code, mbits, duration) = timed_send(req_builder, bytes);
     println!(
         "upload {:.2} mbit/s with {} in {}ms -> post: {}",
         mbits,
@@ -77,13 +76,8 @@ fn test_upload(client: &Client, bytes: usize) -> f64 {
 
 fn test_download(client: &Client, bytes: usize) -> f64 {
     let url = &format!("{}/{}{}", BASE_URL, DOWNLOAD_URL, bytes);
-    let start = Instant::now();
-    let response = client.get(url).send().unwrap();
-    let status_code = response.status();
-    response.text().unwrap();
-    let duration = start.elapsed();
-    let mbit = bytes as f64 * 8.0 / 1_000_000.0;
-    let mbits = mbit / duration.as_secs_f64();
+    let req_builder = client.get(url);
+    let (_response, status_code, mbits, duration) = timed_send(req_builder, bytes);
     println!(
         "download {:.2} mbit/s with {} in {}ms -> get: {}",
         mbits,
@@ -100,4 +94,14 @@ fn format_bytes(bytes: usize) -> String {
         1_000_000..=999_999_999 => format!("{}MB", bytes / 1_000_000),
         _ => format!("{} bytes", bytes),
     }
+}
+
+fn timed_send(req_builder: RequestBuilder, bytes: usize) -> (Response, StatusCode, f64, Duration) {
+    let start = Instant::now();
+    let response = req_builder.send().unwrap();
+    let status_code = response.status();
+    let duration = start.elapsed();
+    let mbit = bytes as f64 * 8.0 / 1_000_000.0;
+    let mbits = mbit / duration.as_secs_f64();
+    (response, status_code, mbits, duration)
 }
