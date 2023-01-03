@@ -1,5 +1,5 @@
 use reqwest::{
-    blocking::{Client, RequestBuilder, Response},
+    blocking::{Client, RequestBuilder},
     StatusCode,
 };
 use std::time::{Duration, Instant};
@@ -57,9 +57,9 @@ fn test_downloads(client: &Client) {
     for _ in 0..NR_TEST_RUNS {
         test_download(client, 10_000_000);
     }
-    for _ in 0..NR_TEST_RUNS {
-        test_download(client, 100_000_000);
-    }
+    // for _ in 0..NR_TEST_RUNS {
+    //     test_download(client, 100_000_000);
+    // }
 }
 
 fn test_latency(client: &Client) {
@@ -108,7 +108,7 @@ fn format_bytes(bytes: usize) -> String {
 
 fn timed_send(req_builder: RequestBuilder, bytes: usize) -> (StatusCode, f64, Duration) {
     let start = Instant::now();
-    let response = req_builder.send().unwrap();
+    let response = req_builder.send().expect("failed to get response");
     let status_code = response.status();
     let _res_bytes = response.bytes();
     let duration = start.elapsed();
