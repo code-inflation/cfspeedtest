@@ -1,8 +1,10 @@
+use regex::Regex;
 use reqwest::{
     blocking::{Client, RequestBuilder},
     header::HeaderValue,
     StatusCode,
 };
+use std::io::stdout;
 use std::{
     fmt::Display,
     time::{Duration, Instant},
@@ -13,12 +15,12 @@ const DOWNLOAD_URL: &str = "__down?bytes=";
 const UPLOAD_URL: &str = "__up";
 const NR_TEST_RUNS: u32 = 1;
 const PAYLOAD_SIZES: [usize; 4] = [100_000, 1_000_000, 10_000_000, 25_000_000];
+const NR_LATENCY_TESTS: u32 = 25;
 
 #[derive(Clone, Copy, Debug)]
 enum TestType {
     Download,
     Upload,
-    Latency,
 }
 
 struct Measurement {
@@ -66,16 +68,71 @@ fn main() {
 fn speed_test(client: Client) {
     let metadata = fetch_metadata(&client);
     println!("{}", metadata);
-    test_latency(&client);
+    run_latency_test(&client);
     let _down_measurements = run_tests(&client, test_download, TestType::Download);
     let _up_measurements = run_tests(&client, test_upload, TestType::Upload);
 }
 
-fn test_latency(client: &Client) {
-    // TODO measure time to first byte - server processing time
-    // for _ in 0..10 {
-    //     test_download(client, 1);
-    // }
+fn run_latency_test(client: &Client) -> (Vec<f64>, f64) {
+    let mut measurements: Vec<f64> = Vec::new();
+    for i in 0..=NR_LATENCY_TESTS {
+        print_progress("latency test", i, NR_LATENCY_TESTS);
+        let latency = test_latency(client);
+        measurements.push(latency);
+    }
+    let avg_latency = measurements.iter().sum::<f64>() / measurements.len() as f64;
+    println!(
+        "\nAvg GET request latency {:.2} ms (RTT excluding server processing time)",
+        avg_latency
+    );
+    (measurements, avg_latency)
+}
+
+use std::io::Write;
+fn print_progress(name: &str, curr: u32, max: u32) {
+    const BAR_LEN: u32 = 30;
+    let progress_line = ((curr as f32 / max as f32) * BAR_LEN as f32) as u32;
+    let remaining_line = BAR_LEN - progress_line;
+    print!(
+        "\r{} [{}{}]",
+        name,
+        (0..progress_line).map(|_| "=").collect::<String>(),
+        (0..remaining_line).map(|_| "-").collect::<String>(),
+    );
+    stdout().flush().expect("error printing progress bar");
+}
+
+fn test_latency(client: &Client) -> f64 {
+    let url = &format!("{}/{}{}", BASE_URL, DOWNLOAD_URL, 0);
+    let req_builder = client.get(url);
+
+    let start = Instant::now();
+    let response = req_builder.send().expect("failed to get response");
+    let _status_code = response.status();
+    let duration = start.elapsed().as_secs_f64() * 1_000.0;
+
+    let re = Regex::new(r"cfRequestDuration;dur=([\d.]+)").unwrap();
+    let cf_req_duration: f64 = re
+        .captures(
+            response
+                .headers()
+                .get("Server-Timing")
+                .expect("No Server-Timing in response header")
+                .to_str()
+                .unwrap(),
+        )
+        .unwrap()
+        .get(1)
+        .unwrap()
+        .as_str()
+        .parse()
+        .unwrap();
+    let mut req_latency = duration - cf_req_duration;
+    if req_latency < 0.0 {
+        // TODO investigate negative latency values
+        req_latency = 0.0
+    }
+    req_latency
 }
 
 fn run_tests(
