@@ -150,17 +150,28 @@ fn run_tests(
                 mbit,
             });
         }
-        log_measurements(&measurements);
     }
+    log_measurements(&measurements);
     measurements
 }
 
 fn log_measurements(measurements: &[Measurement]) {
     // TODO calculate stats on this
-    for measurement in measurements {
-        // TODO draw boxplot etc
-        println!("{}", measurement)
-    }
+    let min = measurements
+        .iter()
+        .map(|m| m.mbit)
+        .fold(f64::INFINITY, |a, b| a.min(b));
+    let max = measurements
+        .iter()
+        .map(|m| m.mbit)
+        .fold(f64::NEG_INFINITY, |a, b| a.max(b));
+    let avg: f64 = measurements.iter().map(|m| m.mbit).sum::<f64>() / measurements.len() as f64;
+
+    // TODO draw boxplot etc
+    println!(
+        "{:?}: min {:.2}, max {:.2}, avg {:.2}",
+        measurements[0].test_type, min, max, avg
+    );
 }
 
 fn test_upload(client: &Client, payload_size_bytes: usize) -> f64 {
