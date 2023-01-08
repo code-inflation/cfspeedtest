@@ -5,6 +5,7 @@ use reqwest::{
     StatusCode,
 };
 use std::io::stdout;
+use std::io::Write;
 use std::{
     fmt::Display,
     time::{Duration, Instant},
@@ -88,7 +89,6 @@ fn run_latency_test(client: &Client) -> (Vec<f64>, f64) {
     (measurements, avg_latency)
 }
 
-use std::io::Write;
 fn print_progress(name: &str, curr: u32, max: u32) {
     const BAR_LEN: u32 = 30;
     let progress_line = ((curr as f32 / max as f32) * BAR_LEN as f32) as u32;
@@ -214,7 +214,6 @@ fn timed_send(
 }
 
 fn fetch_metadata(client: &Client) -> Metadata {
-    // TODO fix this mess
     let url = &format!("{}/{}{}", BASE_URL, DOWNLOAD_URL, 0);
     let headers = client
         .get(url)
@@ -222,43 +221,24 @@ fn fetch_metadata(client: &Client) -> Metadata {
         .expect("failed to get response")
         .headers()
         .to_owned();
-
-    let city = headers
-        .get("cf-meta-city")
-        .unwrap_or(&HeaderValue::from_str("City N/A").unwrap())
-        .to_str()
-        .unwrap()
-        .to_owned();
-    let country = headers
-        .get("cf-meta-country")
-        .unwrap_or(&HeaderValue::from_str("Country N/A").unwrap())
-        .to_str()
-        .unwrap()
-        .to_owned();
-    let ip = headers
-        .get("cf-meta-ip")
-        .unwrap_or(&HeaderValue::from_str("IP N/A").unwrap())
-        .to_str()
-        .unwrap()
-        .to_owned();
-    let asn = headers
-        .get("cf-meta-asn")
-        .unwrap_or(&HeaderValue::from_str("ASN N/A").unwrap())
-        .to_str()
-        .unwrap()
-        .to_owned();
-    let colo = headers
-        .get("cf-meta-colo")
-        .unwrap_or(&HeaderValue::from_str("Colo N/A").unwrap())
-        .to_str()
-        .unwrap()
-        .to_owned();
-
     Metadata {
-        city,
-        country,
-        ip,
-        asn,
-        colo,
+        city: extract_header_value(&headers, "cf-meta-city", "City N/A"),
+        country: extract_header_value(&headers, "cf-meta-country", "Country N/A"),
+        ip: extract_header_value(&headers, "cf-meta-ip", "IP N/A"),
+        asn: extract_header_value(&headers, "cf-meta-asn", "ASN N/A"),
+        colo: extract_header_value(&headers, "cf-meta-colo", "Colo N/A"),
     }
+}
+
+fn extract_header_value(
+    headers: &reqwest::header::HeaderMap,
+    header_name: &str,
+    na_value: &str,
+) -> String {
+    headers
+        .get(header_name)
+        .unwrap_or(&HeaderValue::from_str(na_value).unwrap())
+        .to_str()
+        .unwrap()
+        .to_owned()
 }
