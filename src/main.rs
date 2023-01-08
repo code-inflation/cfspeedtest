@@ -14,8 +14,9 @@ use std::{
 const BASE_URL: &str = "http://speed.cloudflare.com";
 const DOWNLOAD_URL: &str = "__down?bytes=";
 const UPLOAD_URL: &str = "__up";
-const NR_TEST_RUNS: u32 = 1;
-const PAYLOAD_SIZES: [usize; 4] = [100_000, 1_000_000, 10_000_000, 25_000_000];
+const NR_TEST_RUNS: u32 = 10;
+// const PAYLOAD_SIZES: [usize; 4] = [100_000, 1_000_000, 10_000_000, 25_000_000];
+const PAYLOAD_SIZES: [usize; 3] = [100_000, 1_000_000, 10_000_000];
 const NR_LATENCY_TESTS: u32 = 25;
 
 #[derive(Clone, Copy, Debug)]
@@ -142,7 +143,12 @@ fn run_tests(
 ) -> Vec<Measurement> {
     let mut measurements: Vec<Measurement> = Vec::new();
     for payload_size in PAYLOAD_SIZES {
-        for _ in 0..NR_TEST_RUNS {
+        for i in 0..NR_TEST_RUNS {
+            print_progress(
+                &format!("{:?} {:<5}", test_type, format_bytes(payload_size)),
+                i,
+                NR_TEST_RUNS,
+            );
             let mbit = test_fn(client, payload_size);
             measurements.push(Measurement {
                 test_type,
@@ -169,7 +175,7 @@ fn log_measurements(measurements: &[Measurement]) {
 
     // TODO draw boxplot etc
     println!(
-        "{:?}: min {:.2}, max {:.2}, avg {:.2}",
+        "\n{:?}: min {:.2}, max {:.2}, avg {:.2}",
         measurements[0].test_type, min, max, avg
     );
 }
@@ -179,8 +185,8 @@ fn test_upload(client: &Client, payload_size_bytes: usize) -> f64 {
     let payload: Vec<u8> = vec![1; payload_size_bytes];
     let req_builder = client.post(url).body(payload);
     let (status_code, mbits, duration) = timed_send(req_builder, payload_size_bytes);
-    println!(
-        "upload {:.2} mbit/s with {} in {}ms -> post: {}",
+    print!(
+        "\tupload {:.2} mbit/s with {} in {}ms -> post: {}",
         mbits,
         format_bytes(payload_size_bytes),
         duration.as_millis(),
@@ -193,8 +199,8 @@ fn test_download(client: &Client, payload_size_bytes: usize) -> f64 {
     let url = &format!("{}/{}{}", BASE_URL, DOWNLOAD_URL, payload_size_bytes);
     let req_builder = client.get(url);
     let (status_code, mbits, duration) = timed_send(req_builder, payload_size_bytes);
-    println!(
-        "download {:.2} mbit/s with {} in {}ms -> get: {}",
+    print!(
+        "\tdownload {:.2} mbit/s with {} in {}ms -> get: {}",
         mbits,
         format_bytes(payload_size_bytes),
         duration.as_millis(),
