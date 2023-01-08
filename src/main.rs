@@ -162,7 +162,7 @@ fn run_tests(
 }
 
 fn log_measurements(measurements: &[Measurement]) {
-    // TODO calculate stats on this
+    // TODO calculate this for each payload size
     let min = measurements
         .iter()
         .map(|m| m.mbit)
