@@ -173,7 +173,7 @@ fn test_upload(client: &Client, payload_size_bytes: usize) -> f64 {
     let req_builder = client.post(url).body(payload);
     let (status_code, mbits, duration) = timed_send(req_builder, payload_size_bytes);
     print!(
-        "\tupload {:.2} mbit/s with {} in {}ms -> post: {}     ",
+        "\tupload {:.2} mbit/s with {} in {}ms -> post: {}  ",
         mbits,
         format_bytes(payload_size_bytes),
         duration.as_millis(),
@@ -187,7 +187,7 @@ fn test_download(client: &Client, payload_size_bytes: usize) -> f64 {
     let req_builder = client.get(url);
     let (status_code, mbits, duration) = timed_send(req_builder, payload_size_bytes);
     print!(
-        "\tdownload {:.2} mbit/s with {} in {}ms -> get: {}     ",
+        "\tdownload {:.2} mbit/s with {} in {}ms -> get: {}  ",
         mbits,
         format_bytes(payload_size_bytes),
         duration.as_millis(),
