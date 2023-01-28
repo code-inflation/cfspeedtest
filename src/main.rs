@@ -4,13 +4,6 @@ use reqwest::{
     header::HeaderValue,
     StatusCode,
 };
-
-
-
-
-
-
-
 use std::{
     fmt::Display,
     time::{Duration, Instant},
