@@ -18,8 +18,8 @@ jobs:
             archive: zip
     steps:
       - uses: actions/checkout@master
-      - name: Compile and release
-        uses: rust-build/rust-build.action@v1.4.2
+      - name: Release binary
+        uses: rust-build/rust-build.action@v1.4.1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
