@@ -1,5 +1,5 @@
 # cfspeed - Unofficial CLI for [speed.cloudflare.com](https://speed.cloudflare.com)
-[![Build](https://github.com/code-inflation/cfspeed/actions/workflows/CI.yml/badge.svg?branch=master)](https://github.com/code-inflation/cfspeed/actions/workflows/CI.yml)
+[![Build](https://github.com/code-inflation/cfspeed/actions/workflows/CI.yml/badge.svg?branch=master)](https://github.com/code-inflation/cfspeed/actions/workflow[![CI](https://github.com/code-inflation/cfspeed/actions/workflows/CI.yml/badge.svg)](https://github.com/code-inflation/cfspeed/actions/workflows/CI.yml)s/CI.yml)
 
 ## TODO
 - [ ] Fix gh release action
