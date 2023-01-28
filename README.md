@@ -1,4 +1,4 @@
-# cfspeed - Unofficial CLI for CloudFlare Speedtest
+# cfspeed - Unofficial CLI for [speed.cloudflare.com](https://speed.cloudflare.com)
 **WIP**
 
 ## TODO
