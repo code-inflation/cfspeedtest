@@ -1,7 +1,8 @@
 # cfspeed - Unofficial CLI for [speed.cloudflare.com](https://speed.cloudflare.com)
-[![Build](https://github.com/code-inflation/cfspeed/actions/workflows/rust.yml/badge.svg?branch=master)](https://github.com/code-inflation/cfspeed/actions/workflows/rust.yml)
+[![Build](https://github.com/code-inflation/cfspeed/actions/workflows/CI.yml/badge.svg?branch=master)](https://github.com/code-inflation/cfspeed/actions/workflows/CI.yml)
 
 ## TODO
+- [ ] Fix gh release action
 - [ ] CLI arguments (nr of tests, payload sizes etc.)
 - [ ] Boxplot for measurements
 - [ ] Asciinema recording in readme (preferably without doxing my IP)
