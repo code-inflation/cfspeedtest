@@ -1,3 +1,5 @@
+name: Rust Release Binary
+
 on:
   release:
     types: [created]
