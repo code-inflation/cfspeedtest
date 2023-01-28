@@ -39,6 +39,7 @@ jobs:
       - uses: taiki-e/upload-rust-binary-action@v1
         with:
           bin: cfspeed
+          target: ${{ matrix.target }}
           tar: unix
           zip: windows
           token: ${{ secrets.GITHUB_TOKEN }}
