@@ -10,7 +10,10 @@ on:
 
 jobs:
   create-release:
-    runs-on: ubuntu-latest
+    # Use Ubuntu 20.04 here, because latest (22.04) uses OpenSSL v3.
+    # Currently OpenSSL v3 causes compile issues with openssl-sys
+    # see: https://github.com/seanmonstar/reqwest/blob/master/.github/workflows/ci.yml#L207
+    runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v3
       - uses: taiki-e/create-gh-release-action@v1
