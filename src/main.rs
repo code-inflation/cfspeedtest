@@ -4,12 +4,12 @@ use reqwest::{
     header::HeaderValue,
     StatusCode,
 };
-use std::io::stdout;
-use std::io::Write;
 use std::{
     fmt::Display,
     time::{Duration, Instant},
 };
+mod progress;
+use progress::print_progress;
 
 const BASE_URL: &str = "http://speed.cloudflare.com";
 const DOWNLOAD_URL: &str = "__down?bytes=";
@@ -88,19 +88,6 @@ fn run_latency_test(client: &Client) -> (Vec<f64>, f64) {
         avg_latency
     );
     (measurements, avg_latency)
-}
-
-fn print_progress(name: &str, curr: u32, max: u32) {
-    const BAR_LEN: u32 = 30;
-    let progress_line = ((curr as f32 / max as f32) * BAR_LEN as f32) as u32;
-    let remaining_line = BAR_LEN - progress_line;
-    print!(
-        "\r{} [{}{}]",
-        name,
-        (0..progress_line).map(|_| "=").collect::<String>(),
-        (0..remaining_line).map(|_| "-").collect::<String>(),
-    );
-    stdout().flush().expect("error printing progress bar");
 }
 
 fn test_latency(client: &Client) -> f64 {
