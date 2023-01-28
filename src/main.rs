@@ -84,7 +84,7 @@ fn run_latency_test(client: &Client) -> (Vec<f64>, f64) {
     }
     let avg_latency = measurements.iter().sum::<f64>() / measurements.len() as f64;
     println!(
-        "\nAvg GET request latency {:.2} ms (RTT excluding server processing time)",
+        "\nAvg GET request latency {:.2} ms (RTT excluding server processing time)\n",
         avg_latency
     );
     (measurements, avg_latency)
@@ -143,6 +143,7 @@ fn run_tests(
                 mbit,
             });
         }
+        println!()
     }
     log_measurements(&measurements);
     measurements
@@ -162,7 +163,7 @@ fn log_measurements(measurements: &[Measurement]) {
 
     // TODO draw boxplot etc
     println!(
-        "\n{:?}: min {:.2}, max {:.2}, avg {:.2}",
+        "{:?}: min {:.2}, max {:.2}, avg {:.2}\n",
         measurements[0].test_type, min, max, avg
     );
 }
