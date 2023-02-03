@@ -68,7 +68,7 @@ fn main() {
 
 fn speed_test(client: Client) {
     let metadata = fetch_metadata(&client);
-    println!("{}", metadata);
+    println!("{metadata}");
     run_latency_test(&client);
     let _down_measurements = run_tests(&client, test_download, TestType::Download);
     let _up_measurements = run_tests(&client, test_upload, TestType::Upload);
@@ -83,8 +83,7 @@ fn run_latency_test(client: &Client) -> (Vec<f64>, f64) {
     }
     let avg_latency = measurements.iter().sum::<f64>() / measurements.len() as f64;
     println!(
-        "\nAvg GET request latency {:.2} ms (RTT excluding server processing time)\n",
-        avg_latency
+        "\nAvg GET request latency {avg_latency:.2} ms (RTT excluding server processing time)\n"
     );
     (measurements, avg_latency)
 }
@@ -168,7 +167,7 @@ fn log_measurements(measurements: &[Measurement]) {
 }
 
 fn test_upload(client: &Client, payload_size_bytes: usize) -> f64 {
-    let url = &format!("{}/{}", BASE_URL, UPLOAD_URL);
+    let url = &format!("{BASE_URL}/{UPLOAD_URL}");
     let payload: Vec<u8> = vec![1; payload_size_bytes];
     let req_builder = client.post(url).body(payload);
     let (status_code, mbits, duration) = timed_send(req_builder, payload_size_bytes);
@@ -183,7 +182,7 @@ fn test_upload(client: &Client, payload_size_bytes: usize) -> f64 {
 }
 
 fn test_download(client: &Client, payload_size_bytes: usize) -> f64 {
-    let url = &format!("{}/{}{}", BASE_URL, DOWNLOAD_URL, payload_size_bytes);
+    let url = &format!("{BASE_URL}/{DOWNLOAD_URL}{payload_size_bytes}");
     let req_builder = client.get(url);
     let (status_code, mbits, duration) = timed_send(req_builder, payload_size_bytes);
     print!(
@@ -200,7 +199,7 @@ fn format_bytes(bytes: usize) -> String {
     match bytes {
         1_000..=999_999 => format!("{}KB", bytes / 1_000),
         1_000_000..=999_999_999 => format!("{}MB", bytes / 1_000_000),
-        _ => format!("{} bytes", bytes),
+        _ => format!("{bytes} bytes"),
     }
 }
 
