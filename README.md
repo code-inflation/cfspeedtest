@@ -1,5 +1,5 @@
-# cfspeed - Unofficial CLI for [speed.cloudflare.com](https://speed.cloudflare.com)
-[![Build](https://github.com/code-inflation/cfspeed/actions/workflows/CI.yml/badge.svg?branch=master)](https://github.com/code-inflation/cfspeed/actions/workflow[![CI](https://github.com/code-inflation/cfspeed/actions/workflows/CI.yml/badge.svg)](https://github.com/code-inflation/cfspeed/actions/workflows/CI.yml)s/CI.yml)
+# cfspeedtest - Unofficial CLI for [speed.cloudflare.com](https://speed.cloudflare.com)
+[![Build](https://github.com/code-inflation/cfspeedtest/actions/workflows/CI.yml/badge.svg?branch=master)](https://github.com/code-inflation/cfspeedtest/actions/workflow[![CI](https://github.com/code-inflation/cfspeedtest/actions/workflows/CI.yml/badge.svg)](https://github.com/code-inflation/cfspeedtest/actions/workflows/CI.yml)s/CI.yml)
 
 ## TODO
 - [ ] Dynamic payload sizing depending on network speed
