@@ -5,6 +5,6 @@
 - [ ] Dynamic payload sizing depending on network speed
 - [ ] CLI arguments (nr of tests, payload sizes etc.)
 - [ ] Boxplot for measurements
-- [ ] Asciinema recording in readme (preferably without doxing my IP)
+- [ ] Asciinema recording in readme
 - [ ] Publish crate
 - [ ] Install and usage instructions

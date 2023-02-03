@@ -1,5 +1,5 @@
 use crate::speedtest::TestType;
-use std::fmt::Display;
+use std::{collections::HashSet, fmt::Display};
 
 pub(crate) struct Measurement {
     pub(crate) test_type: TestType,
@@ -20,22 +20,36 @@ impl Display for Measurement {
 }
 
 pub(crate) fn log_measurements(measurements: &[Measurement]) {
-    // TODO calculate this for each payload size
-    let min = measurements
+    println!("\n### STATS ###");
+    measurements
         .iter()
-        .map(|m| m.mbit)
-        .fold(f64::INFINITY, |a, b| a.min(b));
-    let max = measurements
+        .map(|m| m.test_type)
+        .collect::<HashSet<TestType>>()
         .iter()
-        .map(|m| m.mbit)
-        .fold(f64::NEG_INFINITY, |a, b| a.max(b));
-    let avg: f64 = measurements.iter().map(|m| m.mbit).sum::<f64>() / measurements.len() as f64;
+        .for_each(|t| log_measurements_by_test_type(measurements, *t));
+}
 
+fn log_measurements_by_test_type(measurements: &[Measurement], test_type: TestType) {
+    // TODO calculate this for each payload size
+    let type_measurements: Vec<f64> = measurements
+        .iter()
+        .filter(|m| m.test_type == test_type)
+        .map(|m| m.mbit)
+        .collect();
+    let (min, max, avg) = calc_stats(type_measurements);
     // TODO draw boxplot etc
-    println!(
-        "{:?}: min {:.2}, max {:.2}, avg {:.2}\n",
-        measurements[0].test_type, min, max, avg
-    );
+    println!("{test_type:?}: min {min:.2}, max {max:.2}, avg {avg:.2}");
+}
+
+fn calc_stats(mbit_measurements: Vec<f64>) -> (f64, f64, f64) {
+    let min = mbit_measurements
+        .iter()
+        .fold(f64::INFINITY, |a, b| a.min(*b));
+    let max = mbit_measurements
+        .iter()
+        .fold(f64::NEG_INFINITY, |a, b| a.max(*b));
+    let avg: f64 = mbit_measurements.iter().sum::<f64>() / mbit_measurements.len() as f64;
+    (min, max, avg)
 }
 
 pub(crate) fn format_bytes(bytes: usize) -> String {
