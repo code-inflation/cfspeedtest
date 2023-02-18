@@ -5,7 +5,8 @@
 - [ ] Dynamic payload sizing depending on network speed
 - [ ] Consider server processing time in measurements
 - [ ] CLI arguments (nr of tests, payload sizes etc.)
-- [ ] Boxplot for measurements
+- [ ] Clean up outputs
+- [X] Boxplot for measurements
 - [ ] Asciinema recording in readme
 - [ ] Publish crate
 - [ ] Install and usage instructions

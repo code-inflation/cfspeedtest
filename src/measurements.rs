@@ -1,3 +1,4 @@
+use crate::boxplot;
 use crate::speedtest::{TestType, PAYLOAD_SIZES};
 use std::{collections::HashSet, fmt::Display};
 
@@ -37,22 +38,53 @@ fn log_measurements_by_test_type(measurements: &[Measurement], test_type: TestTy
             .filter(|m| m.payload_size == payload_size)
             .map(|m| m.mbit)
             .collect();
-        let (min, max, avg) = calc_stats(type_measurements);
-        // TODO draw boxplot etc
+        let (min, q1, median, q3, max, avg) = calc_stats(type_measurements).unwrap();
+
         let formated_payload = format_bytes(payload_size);
         println!("{test_type:?} {formated_payload}: min {min:.2}, max {max:.2}, avg {avg:.2}");
+        let plot = boxplot::render_plot(min, q1, median, q3, max);
+        println!("{plot}\n");
     }
 }
 
-fn calc_stats(mbit_measurements: Vec<f64>) -> (f64, f64, f64) {
-    let min = mbit_measurements
-        .iter()
-        .fold(f64::INFINITY, |a, b| a.min(*b));
-    let max = mbit_measurements
-        .iter()
-        .fold(f64::NEG_INFINITY, |a, b| a.max(*b));
-    let avg: f64 = mbit_measurements.iter().sum::<f64>() / mbit_measurements.len() as f64;
-    (min, max, avg)
+fn calc_stats(mbit_measurements: Vec<f64>) -> Option<(f64, f64, f64, f64, f64, f64)> {
+    let length = mbit_measurements.len();
+    if length < 4 {
+        return None;
+    }
+
+    let mut sorted_data = mbit_measurements.clone();
+    sorted_data.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Less));
+
+    let q1 = if length % 2 == 0 {
+        median(&sorted_data[0..length / 2])
+    } else {
+        median(&sorted_data[0..(length + 1) / 2])
+    };
+
+    let q3 = if length % 2 == 0 {
+        median(&sorted_data[length / 2..length])
+    } else {
+        median(&sorted_data[(length + 1) / 2..length])
+    };
+
+    Some((
+        *sorted_data.first().unwrap(),
+        q1,
+        median(&sorted_data),
+        q3,
+        *sorted_data.last().unwrap(),
+        mbit_measurements.iter().sum::<f64>() / mbit_measurements.len() as f64,
+    ))
+}
+
+fn median(data: &[f64]) -> f64 {
+    let length = data.len();
+    if length % 2 == 0 {
+        (data[length / 2 - 1] + data[length / 2]) / 2.0
+    } else {
+        data[length / 2]
+    }
 }
 
 pub(crate) fn format_bytes(bytes: usize) -> String {
