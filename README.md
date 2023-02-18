@@ -4,12 +4,13 @@
 ## TODO
 - [ ] Dynamic payload sizing depending on network speed
 - [ ] Consider server processing time in measurements
-- [ ] CLI arguments (~~nr of tests~~, payload sizes etc.)
+- [ ] CLI arguments (~~nr of tests~~, payload sizes, verbosity)
 - [ ] Clean up outputs
 - [X] Boxplot for measurements
 - [ ] Asciinema recording in readme
 - [ ] Publish crate
 - [ ] Install and usage instructions
+- [ ] Add Serde to provide CSV/ TSV ... output
 
 ## Development
 ### Logging
