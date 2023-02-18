@@ -16,10 +16,8 @@ use std::{
 const BASE_URL: &str = "http://speed.cloudflare.com";
 const DOWNLOAD_URL: &str = "__down?bytes=";
 const UPLOAD_URL: &str = "__up";
-const NR_TEST_RUNS: u32 = 10;
 // pub const PAYLOAD_SIZES: [usize; 1] = [10_000];
 pub const PAYLOAD_SIZES: [usize; 4] = [100_000, 1_000_000, 10_000_000, 25_000_000];
-const NR_LATENCY_TESTS: u32 = 25;
 
 #[derive(Clone, Copy, Debug, Hash, Eq, PartialEq)]
 pub(crate) enum TestType {
@@ -45,19 +43,24 @@ impl Display for Metadata {
     }
 }
 
-pub(crate) fn speed_test(client: Client) {
+pub(crate) fn speed_test(client: Client, nr_tests: u32, nr_latency_tests: u32) {
     let metadata = fetch_metadata(&client);
     println!("{metadata}");
-    run_latency_test(&client);
-    let mut measurements = run_tests(&client, test_download, TestType::Download);
-    measurements.append(&mut run_tests(&client, test_upload, TestType::Upload));
+    run_latency_test(&client, nr_latency_tests);
+    let mut measurements = run_tests(&client, test_download, TestType::Download, nr_tests);
+    measurements.append(&mut run_tests(
+        &client,
+        test_upload,
+        TestType::Upload,
+        nr_tests,
+    ));
     log_measurements(&measurements);
 }
 
-fn run_latency_test(client: &Client) -> (Vec<f64>, f64) {
+fn run_latency_test(client: &Client, nr_latency_tests: u32) -> (Vec<f64>, f64) {
     let mut measurements: Vec<f64> = Vec::new();
-    for i in 0..=NR_LATENCY_TESTS {
-        print_progress("latency test", i, NR_LATENCY_TESTS);
+    for i in 0..=nr_latency_tests {
+        print_progress("latency test", i, nr_latency_tests);
         let latency = test_latency(client);
         measurements.push(latency);
     }
@@ -105,14 +108,15 @@ fn run_tests(
     client: &Client,
     test_fn: fn(&Client, usize) -> f64,
     test_type: TestType,
+    nr_tests: u32,
 ) -> Vec<Measurement> {
     let mut measurements: Vec<Measurement> = Vec::new();
     for payload_size in PAYLOAD_SIZES {
-        for i in 0..NR_TEST_RUNS {
+        for i in 0..nr_tests {
             print_progress(
                 &format!("{:?} {:<5}", test_type, format_bytes(payload_size)),
                 i,
-                NR_TEST_RUNS - 1,
+                nr_tests - 1,
             );
             let mbit = test_fn(client, payload_size);
             measurements.push(Measurement {
