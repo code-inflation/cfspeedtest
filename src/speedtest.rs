@@ -17,8 +17,8 @@ const BASE_URL: &str = "http://speed.cloudflare.com";
 const DOWNLOAD_URL: &str = "__down?bytes=";
 const UPLOAD_URL: &str = "__up";
 const NR_TEST_RUNS: u32 = 10;
-// const PAYLOAD_SIZES: [usize; 1] = [10_000];
-const PAYLOAD_SIZES: [usize; 4] = [100_000, 1_000_000, 10_000_000, 25_000_000];
+// pub const PAYLOAD_SIZES: [usize; 1] = [10_000];
+pub const PAYLOAD_SIZES: [usize; 4] = [100_000, 1_000_000, 10_000_000, 25_000_000];
 const NR_LATENCY_TESTS: u32 = 25;
 
 #[derive(Clone, Copy, Debug, Hash, Eq, PartialEq)]
