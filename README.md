@@ -4,7 +4,7 @@
 ## TODO
 - [ ] Dynamic payload sizing depending on network speed
 - [ ] Consider server processing time in measurements
-- [ ] CLI arguments (~~nr of tests~~, ~~payload sizes~~, verbosity)
+- [X] CLI arguments (~~nr of tests~~, ~~payload sizes~~, ~~verbosity~~)
 - [ ] Clean up outputs
 - [X] Boxplot for measurements
 - [ ] Asciinema recording in readme

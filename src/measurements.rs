@@ -20,19 +20,26 @@ impl Display for Measurement {
     }
 }
 
-pub(crate) fn log_measurements(measurements: &[Measurement], payload_sizes: Vec<usize>) {
+pub(crate) fn log_measurements(
+    measurements: &[Measurement],
+    payload_sizes: Vec<usize>,
+    verbose: bool,
+) {
     println!("\n### STATS ###");
     measurements
         .iter()
         .map(|m| m.test_type)
         .collect::<HashSet<TestType>>()
         .iter()
-        .for_each(|t| log_measurements_by_test_type(measurements, payload_sizes.clone(), *t));
+        .for_each(|t| {
+            log_measurements_by_test_type(measurements, payload_sizes.clone(), verbose, *t)
+        });
 }
 
 fn log_measurements_by_test_type(
     measurements: &[Measurement],
     payload_sizes: Vec<usize>,
+    verbose: bool,
     test_type: TestType,
 ) {
     for payload_size in payload_sizes {
@@ -46,8 +53,10 @@ fn log_measurements_by_test_type(
 
         let formated_payload = format_bytes(payload_size);
         println!("{test_type:?} {formated_payload}: min {min:.2}, max {max:.2}, avg {avg:.2}");
-        let plot = boxplot::render_plot(min, q1, median, q3, max);
-        println!("{plot}\n");
+        if verbose {
+            let plot = boxplot::render_plot(min, q1, median, q3, max);
+            println!("{plot}\n");
+        }
     }
 }
 

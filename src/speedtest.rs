@@ -2,6 +2,7 @@ use crate::measurements::format_bytes;
 use crate::measurements::log_measurements;
 use crate::measurements::Measurement;
 use crate::progress::print_progress;
+use crate::SpeedTestOptions;
 use log;
 use regex::Regex;
 use reqwest::{
@@ -13,6 +14,7 @@ use std::{
     fmt::Display,
     time::{Duration, Instant},
 };
+
 const BASE_URL: &str = "http://speed.cloudflare.com";
 const DOWNLOAD_URL: &str = "__down?bytes=";
 const UPLOAD_URL: &str = "__up";
@@ -82,31 +84,26 @@ impl Display for Metadata {
     }
 }
 
-pub(crate) fn speed_test(
-    client: Client,
-    max_payload_size: PayloadSize,
-    nr_tests: u32,
-    nr_latency_tests: u32,
-) {
+pub(crate) fn speed_test(client: Client, options: SpeedTestOptions) {
     let metadata = fetch_metadata(&client);
     println!("{metadata}");
-    run_latency_test(&client, nr_latency_tests);
-    let payload_sizes = PayloadSize::sizes_from_max(max_payload_size);
+    run_latency_test(&client, options.nr_latency_tests);
+    let payload_sizes = PayloadSize::sizes_from_max(options.max_payload_size);
     let mut measurements = run_tests(
         &client,
         test_download,
         TestType::Download,
         payload_sizes.clone(),
-        nr_tests,
+        options.nr_tests,
     );
     measurements.append(&mut run_tests(
         &client,
         test_upload,
         TestType::Upload,
         payload_sizes.clone(),
-        nr_tests,
+        options.nr_tests,
     ));
-    log_measurements(&measurements, payload_sizes);
+    log_measurements(&measurements, payload_sizes, options.verbose);
 }
 
 fn run_latency_test(client: &Client, nr_latency_tests: u32) -> (Vec<f64>, f64) {
