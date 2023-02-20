@@ -1,5 +1,5 @@
 use crate::boxplot;
-use crate::speedtest::{TestType, PAYLOAD_SIZES};
+use crate::speedtest::TestType;
 use std::{collections::HashSet, fmt::Display};
 
 pub(crate) struct Measurement {
@@ -20,18 +20,22 @@ impl Display for Measurement {
     }
 }
 
-pub(crate) fn log_measurements(measurements: &[Measurement]) {
+pub(crate) fn log_measurements(measurements: &[Measurement], payload_sizes: Vec<usize>) {
     println!("\n### STATS ###");
     measurements
         .iter()
         .map(|m| m.test_type)
         .collect::<HashSet<TestType>>()
         .iter()
-        .for_each(|t| log_measurements_by_test_type(measurements, *t));
+        .for_each(|t| log_measurements_by_test_type(measurements, payload_sizes.clone(), *t));
 }
 
-fn log_measurements_by_test_type(measurements: &[Measurement], test_type: TestType) {
-    for payload_size in PAYLOAD_SIZES {
+fn log_measurements_by_test_type(
+    measurements: &[Measurement],
+    payload_sizes: Vec<usize>,
+    test_type: TestType,
+) {
+    for payload_size in payload_sizes {
         let type_measurements: Vec<f64> = measurements
             .iter()
             .filter(|m| m.test_type == test_type)
@@ -48,6 +52,7 @@ fn log_measurements_by_test_type(measurements: &[Measurement], test_type: TestTy
 }
 
 fn calc_stats(mbit_measurements: Vec<f64>) -> Option<(f64, f64, f64, f64, f64, f64)> {
+    log::debug!("calc_stats for mbit_measurements {mbit_measurements:?}");
     let length = mbit_measurements.len();
     if length < 4 {
         return None;

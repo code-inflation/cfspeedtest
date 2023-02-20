@@ -2,6 +2,7 @@ use crate::measurements::format_bytes;
 use crate::measurements::log_measurements;
 use crate::measurements::Measurement;
 use crate::progress::print_progress;
+use log;
 use regex::Regex;
 use reqwest::{
     blocking::{Client, RequestBuilder},
@@ -12,17 +13,55 @@ use std::{
     fmt::Display,
     time::{Duration, Instant},
 };
-
 const BASE_URL: &str = "http://speed.cloudflare.com";
 const DOWNLOAD_URL: &str = "__down?bytes=";
 const UPLOAD_URL: &str = "__up";
-// pub const PAYLOAD_SIZES: [usize; 1] = [10_000];
-pub const PAYLOAD_SIZES: [usize; 4] = [100_000, 1_000_000, 10_000_000, 25_000_000];
 
 #[derive(Clone, Copy, Debug, Hash, Eq, PartialEq)]
 pub(crate) enum TestType {
     Download,
     Upload,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) enum PayloadSize {
+    K100 = 100_000,
+    M1 = 1_000_000,
+    M10 = 10_000_000,
+    M25 = 25_000_000,
+    M100 = 100_000_000,
+}
+
+impl Display for PayloadSize {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", format_bytes(self.clone() as usize))
+    }
+}
+
+impl PayloadSize {
+    pub fn from(payload_string: String) -> Result<Self, String> {
+        match payload_string.to_lowercase().as_str() {
+            "100_000" | "100000" | "100k" | "100kb" => Ok(Self::K100),
+            "1_000_000" | "1000000" | "1m" | "1mb" => Ok(Self::M1),
+            "10_000_000" | "10000000" | "10m" | "10mb" => Ok(Self::M10),
+            "25_000_000" | "25000000" | "25m" | "25mb" => Ok(Self::M25),
+            "100_000_000" | "100000000" | "100m" | "100mb" => Ok(Self::M100),
+            _ => Err("Value needs to be one of 100k, 1m, 10m, 25m or 100m".to_string()),
+        }
+    }
+
+    fn sizes_from_max(max_payload_size: PayloadSize) -> Vec<usize> {
+        log::debug!("getting payload iterations for max_payload_size {max_payload_size:?}");
+        let payload_bytes: Vec<usize> =
+            vec![100_000, 1_000_000, 10_000_000, 25_000_000, 100_000_000];
+        match max_payload_size {
+            PayloadSize::K100 => payload_bytes[0..1].to_vec(),
+            PayloadSize::M1 => payload_bytes[0..2].to_vec(),
+            PayloadSize::M10 => payload_bytes[0..3].to_vec(),
+            PayloadSize::M25 => payload_bytes[0..4].to_vec(),
+            PayloadSize::M100 => payload_bytes[0..5].to_vec(),
+        }
+    }
 }
 
 struct Metadata {
@@ -43,18 +82,31 @@ impl Display for Metadata {
     }
 }
 
-pub(crate) fn speed_test(client: Client, nr_tests: u32, nr_latency_tests: u32) {
+pub(crate) fn speed_test(
+    client: Client,
+    max_payload_size: PayloadSize,
+    nr_tests: u32,
+    nr_latency_tests: u32,
+) {
     let metadata = fetch_metadata(&client);
     println!("{metadata}");
     run_latency_test(&client, nr_latency_tests);
-    let mut measurements = run_tests(&client, test_download, TestType::Download, nr_tests);
+    let payload_sizes = PayloadSize::sizes_from_max(max_payload_size);
+    let mut measurements = run_tests(
+        &client,
+        test_download,
+        TestType::Download,
+        payload_sizes.clone(),
+        nr_tests,
+    );
     measurements.append(&mut run_tests(
         &client,
         test_upload,
         TestType::Upload,
+        payload_sizes.clone(),
         nr_tests,
     ));
-    log_measurements(&measurements);
+    log_measurements(&measurements, payload_sizes);
 }
 
 fn run_latency_test(client: &Client, nr_latency_tests: u32) -> (Vec<f64>, f64) {
@@ -103,15 +155,16 @@ fn test_latency(client: &Client) -> f64 {
     }
     req_latency
 }
-
 fn run_tests(
     client: &Client,
     test_fn: fn(&Client, usize) -> f64,
     test_type: TestType,
+    payload_sizes: Vec<usize>,
     nr_tests: u32,
 ) -> Vec<Measurement> {
     let mut measurements: Vec<Measurement> = Vec::new();
-    for payload_size in PAYLOAD_SIZES {
+    for payload_size in payload_sizes {
+        log::debug!("running tests for payload_size {payload_size}");
         for i in 0..nr_tests {
             print_progress(
                 &format!("{:?} {:<5}", test_type, format_bytes(payload_size)),
