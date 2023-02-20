@@ -116,7 +116,7 @@ fn run_tests(
             print_progress(
                 &format!("{:?} {:<5}", test_type, format_bytes(payload_size)),
                 i,
-                nr_tests - 1,
+                nr_tests,
             );
             let mbit = test_fn(client, payload_size);
             measurements.push(Measurement {
@@ -125,6 +125,11 @@ fn run_tests(
                 mbit,
             });
         }
+        print_progress(
+            &format!("{:?} {:<5}", test_type, format_bytes(payload_size)),
+            nr_tests,
+            nr_tests,
+        );
         println!()
     }
     measurements
