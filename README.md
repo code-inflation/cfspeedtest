@@ -5,7 +5,7 @@
 - [ ] Dynamic payload sizing depending on network speed
 - [ ] Consider server processing time in measurements
 - [X] CLI arguments (~~nr of tests~~, ~~payload sizes~~, ~~verbosity~~)
-- [ ] Clean up outputs
+- [X] Clean up output
 - [X] Boxplot for measurements
 - [ ] Asciinema recording in readme
 - [ ] Publish crate

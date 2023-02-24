@@ -25,7 +25,8 @@ pub(crate) fn log_measurements(
     payload_sizes: Vec<usize>,
     verbose: bool,
 ) {
-    println!("\n### STATS ###");
+    println!("\nSummary Statistics");
+    println!("Type     Payload |  min/max/avg in mbit/s");
     measurements
         .iter()
         .map(|m| m.test_type)
@@ -52,7 +53,10 @@ fn log_measurements_by_test_type(
         let (min, q1, median, q3, max, avg) = calc_stats(type_measurements).unwrap();
 
         let formated_payload = format_bytes(payload_size);
-        println!("{test_type:?} {formated_payload}: min {min:.2}, max {max:.2}, avg {avg:.2}");
+        let fmt_test_type = format!("{:?}", test_type);
+        println!(
+            "{fmt_test_type:<9} {formated_payload:<7}|  min {min:<7.2} max {max:<7.2} avg {avg:<7.2}"
+        );
         if verbose {
             let plot = boxplot::render_plot(min, q1, median, q3, max);
             println!("{plot}\n");

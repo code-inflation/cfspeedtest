@@ -209,7 +209,7 @@ fn print_current_speed(
     payload_size_bytes: usize,
 ) {
     print!(
-        "\t {:.2} mbit/s | {} in {}ms -> status: {}  ",
+        "  {:>6.2} mbit/s | {:>5} in {:>4}ms -> status: {}  ",
         mbits,
         format_bytes(payload_size_bytes),
         duration.as_millis(),
