@@ -8,6 +8,7 @@ readme = "README.md"
 repository = "https://github.com/code-inflation/cfspeedtest/"
 keywords = ["cli", "speedtest", "speed-test", "cloudflare"]
 categories = ["command-line-utilities"]
+exclude = [".github/"]
 
 [dependencies]
 log = "0.4"
