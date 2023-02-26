@@ -8,7 +8,7 @@
 - [X] Clean up output
 - [X] Boxplot for measurements
 - [ ] Asciinema recording in readme
-- [ ] Publish crate
+- [X] Publish crate
 - [ ] Install and usage instructions
 - [ ] Add Serde to provide CSV/ TSV ... output
 
