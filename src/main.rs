@@ -41,7 +41,8 @@ pub(crate) struct SpeedTestOptions {
     #[arg(value_parser = parse_payload_size, short, long, default_value_t = PayloadSize::M10)]
     max_payload_size: PayloadSize,
 
-    /// The output format [csv, json or json-pretty]
+    /// Set the output format [csv, json or json-pretty] >
+    /// This silences all other output to stdout
     #[arg(value_parser = parse_output_format, short, long)]
     outupt_format: Option<OutputFormat>,
 
