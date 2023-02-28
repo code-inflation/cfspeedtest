@@ -23,6 +23,8 @@ Options:
           Number of latency tests to run [default: 25]
   -m, --max-payload-size <MAX_PAYLOAD_SIZE>
           The max payload size in bytes to use [100k, 1m, 10m, 25m or 100m] [default: 10MB]
+  -o, --outupt-format <OUTUPT_FORMAT>
+          The output format [csv, json or json-pretty]
   -v, --verbose
           Enable verbose output i.e. print out boxplots of the measurements
   -h, --help
@@ -42,7 +44,7 @@ Options:
 - [ ] Asciinema recording in readme
 - [X] Publish crate
 - [X] ~~Install and~~ ~~usage instructions~~
-- [ ] Add Serde to provide CSV/ TSV ... output
+- [ ] Add Serde to provide CSV/ JSON and JSON-pretty output
 
 ### Logging
 Set the log level using the `RUST_LOG` env var:  

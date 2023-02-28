@@ -7,6 +7,24 @@ use clap::Parser;
 use speedtest::speed_test;
 use speedtest::PayloadSize;
 
+#[derive(Clone, Debug)]
+enum OutputFormat {
+    Csv,
+    Json,
+    JsonPretty,
+}
+
+impl OutputFormat {
+    pub fn from(output_format_string: String) -> Result<Self, String> {
+        match output_format_string.to_lowercase().as_str() {
+            "csv" => Ok(Self::Csv),
+            "json" => Ok(Self::Json),
+            "json_pretty" | "json-pretty" => Ok(Self::JsonPretty),
+            _ => Err("Value needs to be one of csv, json or json-pretty".to_string()),
+        }
+    }
+}
+
 /// Unofficial CLI for speed.cloudflare.com
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -23,6 +41,10 @@ pub(crate) struct SpeedTestOptions {
     #[arg(value_parser = parse_payload_size, short, long, default_value_t = PayloadSize::M10)]
     max_payload_size: PayloadSize,
 
+    /// The output format [csv, json or json-pretty]
+    #[arg(value_parser = parse_output_format, short, long)]
+    outupt_format: Option<OutputFormat>,
+
     /// Enable verbose output i.e. print out boxplots of the measurements
     #[arg(short, long)]
     verbose: bool,
@@ -38,4 +60,8 @@ fn main() {
 
 fn parse_payload_size(input_string: &str) -> Result<PayloadSize, String> {
     PayloadSize::from(input_string.to_string())
+}
+
+fn parse_output_format(input_string: &str) -> Result<OutputFormat, String> {
+    OutputFormat::from(input_string.to_string())
 }

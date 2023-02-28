@@ -1,7 +1,9 @@
 use crate::boxplot;
 use crate::speedtest::TestType;
-use std::{collections::HashSet, fmt::Display};
+use serde::Serialize;
+use std::{collections::HashSet, fmt::Display, io};
 
+#[derive(Serialize)]
 pub(crate) struct Measurement {
     pub(crate) test_type: TestType,
     pub(crate) payload_size: usize,
@@ -35,6 +37,19 @@ pub(crate) fn log_measurements(
         .for_each(|t| {
             log_measurements_by_test_type(measurements, payload_sizes.clone(), verbose, *t)
         });
+
+    // csv output test
+    let mut wtr = csv::Writer::from_writer(io::stdout());
+    for measurement in measurements {
+        wtr.serialize(measurement).unwrap();
+    }
+    wtr.flush().unwrap();
+
+    // json output test
+    serde_json::to_writer(io::stdout(), measurements).unwrap();
+
+    // json_pretty output test
+    serde_json::to_writer_pretty(io::stdout(), measurements).unwrap();
 }
 
 fn log_measurements_by_test_type(

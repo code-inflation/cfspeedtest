@@ -10,6 +10,7 @@ use reqwest::{
     header::HeaderValue,
     StatusCode,
 };
+use serde::Serialize;
 use std::{
     fmt::Display,
     time::{Duration, Instant},
@@ -19,7 +20,7 @@ const BASE_URL: &str = "http://speed.cloudflare.com";
 const DOWNLOAD_URL: &str = "__down?bytes=";
 const UPLOAD_URL: &str = "__up";
 
-#[derive(Clone, Copy, Debug, Hash, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Hash, Serialize, Eq, PartialEq)]
 pub(crate) enum TestType {
     Download,
     Upload,
