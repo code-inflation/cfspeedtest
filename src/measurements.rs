@@ -4,6 +4,18 @@ use serde::Serialize;
 use std::{collections::HashSet, fmt::Display, io};
 
 #[derive(Serialize)]
+struct StatMeasurement {
+    test_type: TestType,
+    payload_size: usize,
+    min: f64,
+    q1: f64,
+    median: f64,
+    q3: f64,
+    max: f64,
+    avg: f64,
+}
+
+#[derive(Serialize)]
 pub(crate) struct Measurement {
     pub(crate) test_type: TestType,
     pub(crate) payload_size: usize,
@@ -47,9 +59,11 @@ pub(crate) fn log_measurements(
 
     // json output test
     serde_json::to_writer(io::stdout(), measurements).unwrap();
+    println!();
 
     // json_pretty output test
     serde_json::to_writer_pretty(io::stdout(), measurements).unwrap();
+    println!();
 }
 
 fn log_measurements_by_test_type(
@@ -58,6 +72,7 @@ fn log_measurements_by_test_type(
     verbose: bool,
     test_type: TestType,
 ) {
+    let mut stat_measurements: Vec<StatMeasurement> = Vec::new();
     for payload_size in payload_sizes {
         let type_measurements: Vec<f64> = measurements
             .iter()
@@ -69,6 +84,16 @@ fn log_measurements_by_test_type(
 
         let formated_payload = format_bytes(payload_size);
         let fmt_test_type = format!("{:?}", test_type);
+        stat_measurements.push(StatMeasurement {
+            test_type,
+            payload_size,
+            min,
+            q1,
+            median,
+            q3,
+            max,
+            avg,
+        });
         println!(
             "{fmt_test_type:<9} {formated_payload:<7}|  min {min:<7.2} max {max:<7.2} avg {avg:<7.2}"
         );
@@ -77,6 +102,21 @@ fn log_measurements_by_test_type(
             println!("{plot}\n");
         }
     }
+
+    // csv output test
+    let mut wtr = csv::Writer::from_writer(io::stdout());
+    for measurement in &stat_measurements {
+        wtr.serialize(measurement).unwrap();
+    }
+    wtr.flush().unwrap();
+
+    // json output test
+    serde_json::to_writer(io::stdout(), &stat_measurements).unwrap();
+    println!();
+
+    // json_pretty output test
+    serde_json::to_writer_pretty(io::stdout(), &stat_measurements).unwrap();
+    println!();
 }
 
 fn calc_stats(mbit_measurements: Vec<f64>) -> Option<(f64, f64, f64, f64, f64, f64)> {
