@@ -38,13 +38,13 @@ Options:
 ### TODO
 - [ ] Dynamic payload sizing depending on network speed
 - [ ] Consider server processing time in measurements
-- [X] CLI arguments (~~nr of tests~~, ~~payload sizes~~, ~~verbosity~~)
+- [X] ~~CLI arguments (nr of tests, payload sizes, verbosity)~~
 - [X] Clean up output
 - [X] Boxplot for measurements
 - [ ] Asciinema recording in readme
 - [X] Publish crate
 - [X] ~~Install and~~ ~~usage instructions~~
-- [ ] Add Serde to provide CSV/ JSON and JSON-pretty output
+- [X] ~~Add Serde to provide CSV/ JSON and JSON-pretty output~~
 
 ### Logging
 Set the log level using the `RUST_LOG` env var:  
