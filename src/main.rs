@@ -7,7 +7,7 @@ use clap::Parser;
 use speedtest::speed_test;
 use speedtest::PayloadSize;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 enum OutputFormat {
     Csv,
     Json,
@@ -54,7 +54,9 @@ pub(crate) struct SpeedTestOptions {
 fn main() {
     env_logger::init();
     let options = SpeedTestOptions::parse();
-    println!("Starting Cloudflare speed test");
+    if options.outupt_format.is_none() {
+        println!("Starting Cloudflare speed test");
+    }
     let client = reqwest::blocking::Client::new();
     speed_test(client, options);
 }

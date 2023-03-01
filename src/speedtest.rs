@@ -2,6 +2,7 @@ use crate::measurements::format_bytes;
 use crate::measurements::log_measurements;
 use crate::measurements::Measurement;
 use crate::progress::print_progress;
+use crate::OutputFormat;
 use crate::SpeedTestOptions;
 use log;
 use regex::Regex;
@@ -87,8 +88,10 @@ impl Display for Metadata {
 
 pub(crate) fn speed_test(client: Client, options: SpeedTestOptions) {
     let metadata = fetch_metadata(&client);
-    println!("{metadata}");
-    run_latency_test(&client, options.nr_latency_tests);
+    if options.outupt_format.is_none() {
+        println!("{metadata}");
+    }
+    run_latency_test(&client, options.nr_latency_tests, options.outupt_format);
     let payload_sizes = PayloadSize::sizes_from_max(options.max_payload_size);
     let mut measurements = run_tests(
         &client,
@@ -96,6 +99,7 @@ pub(crate) fn speed_test(client: Client, options: SpeedTestOptions) {
         TestType::Download,
         payload_sizes.clone(),
         options.nr_tests,
+        options.outupt_format,
     );
     measurements.append(&mut run_tests(
         &client,
@@ -103,21 +107,35 @@ pub(crate) fn speed_test(client: Client, options: SpeedTestOptions) {
         TestType::Upload,
         payload_sizes.clone(),
         options.nr_tests,
+        options.outupt_format,
     ));
-    log_measurements(&measurements, payload_sizes, options.verbose);
+    log_measurements(
+        &measurements,
+        payload_sizes,
+        options.verbose,
+        options.outupt_format,
+    );
 }
 
-fn run_latency_test(client: &Client, nr_latency_tests: u32) -> (Vec<f64>, f64) {
+fn run_latency_test(
+    client: &Client,
+    nr_latency_tests: u32,
+    outupt_format: Option<OutputFormat>,
+) -> (Vec<f64>, f64) {
     let mut measurements: Vec<f64> = Vec::new();
     for i in 0..=nr_latency_tests {
-        print_progress("latency test", i, nr_latency_tests);
+        if outupt_format.is_none() {
+            print_progress("latency test", i, nr_latency_tests);
+        }
         let latency = test_latency(client);
         measurements.push(latency);
     }
     let avg_latency = measurements.iter().sum::<f64>() / measurements.len() as f64;
-    println!(
-        "\nAvg GET request latency {avg_latency:.2} ms (RTT excluding server processing time)\n"
-    );
+    if outupt_format.is_none() {
+        println!(
+            "\nAvg GET request latency {avg_latency:.2} ms (RTT excluding server processing time)\n"
+        );
+    }
     (measurements, avg_latency)
 }
 
@@ -155,51 +173,68 @@ fn test_latency(client: &Client) -> f64 {
 }
 fn run_tests(
     client: &Client,
-    test_fn: fn(&Client, usize) -> f64,
+    test_fn: fn(&Client, usize, Option<OutputFormat>) -> f64,
     test_type: TestType,
     payload_sizes: Vec<usize>,
     nr_tests: u32,
+    outupt_format: Option<OutputFormat>,
 ) -> Vec<Measurement> {
     let mut measurements: Vec<Measurement> = Vec::new();
     for payload_size in payload_sizes {
         log::debug!("running tests for payload_size {payload_size}");
         for i in 0..nr_tests {
-            print_progress(
-                &format!("{:?} {:<5}", test_type, format_bytes(payload_size)),
-                i,
-                nr_tests,
-            );
-            let mbit = test_fn(client, payload_size);
+            if outupt_format.is_none() {
+                print_progress(
+                    &format!("{:?} {:<5}", test_type, format_bytes(payload_size)),
+                    i,
+                    nr_tests,
+                );
+            }
+            let mbit = test_fn(client, payload_size, outupt_format);
             measurements.push(Measurement {
                 test_type,
                 payload_size,
                 mbit,
             });
         }
-        print_progress(
-            &format!("{:?} {:<5}", test_type, format_bytes(payload_size)),
-            nr_tests,
-            nr_tests,
-        );
-        println!()
+        if outupt_format.is_none() {
+            print_progress(
+                &format!("{:?} {:<5}", test_type, format_bytes(payload_size)),
+                nr_tests,
+                nr_tests,
+            );
+            println!()
+        }
     }
     measurements
 }
 
-fn test_upload(client: &Client, payload_size_bytes: usize) -> f64 {
+fn test_upload(
+    client: &Client,
+    payload_size_bytes: usize,
+    outupt_format: Option<OutputFormat>,
+) -> f64 {
     let url = &format!("{BASE_URL}/{UPLOAD_URL}");
     let payload: Vec<u8> = vec![1; payload_size_bytes];
     let req_builder = client.post(url).body(payload);
     let (status_code, mbits, duration) = timed_send(req_builder, payload_size_bytes);
-    print_current_speed(mbits, duration, status_code, payload_size_bytes);
+    if outupt_format.is_none() {
+        print_current_speed(mbits, duration, status_code, payload_size_bytes);
+    }
     mbits
 }
 
-fn test_download(client: &Client, payload_size_bytes: usize) -> f64 {
+fn test_download(
+    client: &Client,
+    payload_size_bytes: usize,
+    outupt_format: Option<OutputFormat>,
+) -> f64 {
     let url = &format!("{BASE_URL}/{DOWNLOAD_URL}{payload_size_bytes}");
     let req_builder = client.get(url);
     let (status_code, mbits, duration) = timed_send(req_builder, payload_size_bytes);
-    print_current_speed(mbits, duration, status_code, payload_size_bytes);
+    if outupt_format.is_none() {
+        print_current_speed(mbits, duration, status_code, payload_size_bytes);
+    }
     mbits
 }
 
