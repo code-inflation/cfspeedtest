@@ -101,7 +101,7 @@ pub(crate) fn speed_test(client: Client, options: SpeedTestOptions) {
         options.nr_tests,
         options.outupt_format,
     );
-    measurements.append(&mut run_tests(
+    measurements.extend(run_tests(
         &client,
         test_upload,
         TestType::Upload,

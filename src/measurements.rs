@@ -1,7 +1,8 @@
 use crate::speedtest::TestType;
 use crate::{boxplot, OutputFormat};
+use indexmap::IndexSet;
 use serde::Serialize;
-use std::{collections::HashSet, fmt::Display, io};
+use std::{fmt::Display, io};
 
 #[derive(Serialize)]
 struct StatMeasurement {
@@ -48,7 +49,7 @@ pub(crate) fn log_measurements(
     measurements
         .iter()
         .map(|m| m.test_type)
-        .collect::<HashSet<TestType>>()
+        .collect::<IndexSet<TestType>>()
         .iter()
         .for_each(|t| {
             stat_measurements.extend(log_measurements_by_test_type(

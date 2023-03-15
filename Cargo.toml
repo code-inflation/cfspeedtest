@@ -19,3 +19,4 @@ clap = { version = "4.1.6", features = ["derive"] }
 serde = { version = "1.0.152", features = ["derive"] }
 csv = "1.2.0"
 serde_json = "1.0"
+indexmap = "1.9.2"
