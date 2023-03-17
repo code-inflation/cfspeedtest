@@ -6,11 +6,7 @@ use crate::OutputFormat;
 use crate::SpeedTestOptions;
 use log;
 use regex::Regex;
-use reqwest::{
-    blocking::{Client, RequestBuilder},
-    header::HeaderValue,
-    StatusCode,
-};
+use reqwest::{blocking::Client, header::HeaderValue, StatusCode};
 use serde::Serialize;
 use std::{
     fmt::Display,
@@ -217,7 +213,14 @@ fn test_upload(
     let url = &format!("{BASE_URL}/{UPLOAD_URL}");
     let payload: Vec<u8> = vec![1; payload_size_bytes];
     let req_builder = client.post(url).body(payload);
-    let (status_code, mbits, duration) = timed_send(req_builder, payload_size_bytes);
+    let (status_code, mbits, duration) = {
+        let start = Instant::now();
+        let response = req_builder.send().expect("failed to get response");
+        let status_code = response.status();
+        let duration = start.elapsed();
+        let mbits = (payload_size_bytes as f64 * 8.0 / 1_000_000.0) / duration.as_secs_f64();
+        (status_code, mbits, duration)
+    };
     if outupt_format.is_none() {
         print_current_speed(mbits, duration, status_code, payload_size_bytes);
     }
@@ -231,7 +234,15 @@ fn test_download(
 ) -> f64 {
     let url = &format!("{BASE_URL}/{DOWNLOAD_URL}{payload_size_bytes}");
     let req_builder = client.get(url);
-    let (status_code, mbits, duration) = timed_send(req_builder, payload_size_bytes);
+    let (status_code, mbits, duration) = {
+        let response = req_builder.send().expect("failed to get response");
+        let status_code = response.status();
+        let start = Instant::now();
+        let _res_bytes = response.bytes();
+        let duration = start.elapsed();
+        let mbits = (payload_size_bytes as f64 * 8.0 / 1_000_000.0) / duration.as_secs_f64();
+        (status_code, mbits, duration)
+    };
     if outupt_format.is_none() {
         print_current_speed(mbits, duration, status_code, payload_size_bytes);
     }
@@ -251,19 +262,6 @@ fn print_current_speed(
         duration.as_millis(),
         status_code
     );
-}
-
-fn timed_send(
-    req_builder: RequestBuilder,
-    payload_size_bytes: usize,
-) -> (StatusCode, f64, Duration) {
-    let start = Instant::now();
-    let response = req_builder.send().expect("failed to get response");
-    let status_code = response.status();
-    let _res_bytes = response.bytes();
-    let duration = start.elapsed();
-    let mbits = (payload_size_bytes as f64 * 8.0 / 1_000_000.0) / duration.as_secs_f64();
-    (status_code, mbits, duration)
 }
 
 fn fetch_metadata(client: &Client) -> Metadata {
