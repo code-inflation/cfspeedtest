@@ -34,10 +34,10 @@ Options:
 ```
 
 Example usage:  
-[![asciicast](https://asciinema.org/a/AnIXZQ653VbcNtcAr6fFJWwj6.svg)](https://asciinema.org/a/AnIXZQ653VbcNtcAr6fFJWwj6)
+[![asciicast](https://asciinema.org/a/Moun5mFB1sm1VFkkFljG9UGyz.svg)](https://asciinema.org/a/Moun5mFB1sm1VFkkFljG9UGyz)
 
 Example with json-pretty output:  
-[![asciicast](https://asciinema.org/a/xmktVNE8Ei5FYPqKBKEk658lt.svg)](https://asciinema.org/a/xmktVNE8Ei5FYPqKBKEk658lt)
+[![asciicast](https://asciinema.org/a/P6IUAADtaCq3bT18GbYVHmksA.svg)](https://asciinema.org/a/P6IUAADtaCq3bT18GbYVHmksA)
 
 
 ## Development
