@@ -33,15 +33,21 @@ Options:
           Print version
 ```
 
+Example usage:  
+[![asciicast](https://asciinema.org/a/AnIXZQ653VbcNtcAr6fFJWwj6.svg)](https://asciinema.org/a/AnIXZQ653VbcNtcAr6fFJWwj6)
+
+Example with json-pretty output:  
+[![asciicast](https://asciinema.org/a/xmktVNE8Ei5FYPqKBKEk658lt.svg)](https://asciinema.org/a/xmktVNE8Ei5FYPqKBKEk658lt)
+
 
 ## Development
 ### TODO
 - [ ] Dynamic payload sizing depending on network speed
-- [ ] Consider server processing time in measurements
+- [X] Consider server processing time in measurements
 - [X] ~~CLI arguments (nr of tests, payload sizes, verbosity)~~
 - [X] Clean up output
 - [X] Boxplot for measurements
-- [ ] Asciinema recording in readme
+- [X] Asciinema recording in readme
 - [X] Publish crate
 - [X] ~~Install and~~ ~~usage instructions~~
 - [X] ~~Add Serde to provide CSV/ JSON and JSON-pretty output~~
