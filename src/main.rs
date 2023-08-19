@@ -44,7 +44,7 @@ pub(crate) struct SpeedTestOptions {
     /// Set the output format [csv, json or json-pretty] >
     /// This silences all other output to stdout
     #[arg(value_parser = parse_output_format, short, long)]
-    outupt_format: Option<OutputFormat>,
+    output_format: Option<OutputFormat>,
 
     /// Enable verbose output i.e. print out boxplots of the measurements
     #[arg(short, long)]
@@ -54,7 +54,7 @@ pub(crate) struct SpeedTestOptions {
 fn main() {
     env_logger::init();
     let options = SpeedTestOptions::parse();
-    if options.outupt_format.is_none() {
+    if options.output_format.is_none() {
         println!("Starting Cloudflare speed test");
     }
     let client = reqwest::blocking::Client::new();

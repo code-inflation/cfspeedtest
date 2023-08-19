@@ -84,10 +84,10 @@ impl Display for Metadata {
 
 pub(crate) fn speed_test(client: Client, options: SpeedTestOptions) {
     let metadata = fetch_metadata(&client);
-    if options.outupt_format.is_none() {
+    if options.output_format.is_none() {
         println!("{metadata}");
     }
-    run_latency_test(&client, options.nr_latency_tests, options.outupt_format);
+    run_latency_test(&client, options.nr_latency_tests, options.output_format);
     let payload_sizes = PayloadSize::sizes_from_max(options.max_payload_size);
     let mut measurements = run_tests(
         &client,
@@ -95,7 +95,7 @@ pub(crate) fn speed_test(client: Client, options: SpeedTestOptions) {
         TestType::Download,
         payload_sizes.clone(),
         options.nr_tests,
-        options.outupt_format,
+        options.output_format,
     );
     measurements.extend(run_tests(
         &client,
@@ -103,31 +103,31 @@ pub(crate) fn speed_test(client: Client, options: SpeedTestOptions) {
         TestType::Upload,
         payload_sizes.clone(),
         options.nr_tests,
-        options.outupt_format,
+        options.output_format,
     ));
     log_measurements(
         &measurements,
         payload_sizes,
         options.verbose,
-        options.outupt_format,
+        options.output_format,
     );
 }
 
 fn run_latency_test(
     client: &Client,
     nr_latency_tests: u32,
-    outupt_format: Option<OutputFormat>,
+    output_format: Option<OutputFormat>,
 ) -> (Vec<f64>, f64) {
     let mut measurements: Vec<f64> = Vec::new();
     for i in 0..=nr_latency_tests {
-        if outupt_format.is_none() {
+        if output_format.is_none() {
             print_progress("latency test", i, nr_latency_tests);
         }
         let latency = test_latency(client);
         measurements.push(latency);
     }
     let avg_latency = measurements.iter().sum::<f64>() / measurements.len() as f64;
-    if outupt_format.is_none() {
+    if output_format.is_none() {
         println!(
             "\nAvg GET request latency {avg_latency:.2} ms (RTT excluding server processing time)\n"
         );
@@ -173,27 +173,27 @@ fn run_tests(
     test_type: TestType,
     payload_sizes: Vec<usize>,
     nr_tests: u32,
-    outupt_format: Option<OutputFormat>,
+    output_format: Option<OutputFormat>,
 ) -> Vec<Measurement> {
     let mut measurements: Vec<Measurement> = Vec::new();
     for payload_size in payload_sizes {
         log::debug!("running tests for payload_size {payload_size}");
         for i in 0..nr_tests {
-            if outupt_format.is_none() {
+            if output_format.is_none() {
                 print_progress(
                     &format!("{:?} {:<5}", test_type, format_bytes(payload_size)),
                     i,
                     nr_tests,
                 );
             }
-            let mbit = test_fn(client, payload_size, outupt_format);
+            let mbit = test_fn(client, payload_size, output_format);
             measurements.push(Measurement {
                 test_type,
                 payload_size,
                 mbit,
             });
         }
-        if outupt_format.is_none() {
+        if output_format.is_none() {
             print_progress(
                 &format!("{:?} {:<5}", test_type, format_bytes(payload_size)),
                 nr_tests,
@@ -208,7 +208,7 @@ fn run_tests(
 fn test_upload(
     client: &Client,
     payload_size_bytes: usize,
-    outupt_format: Option<OutputFormat>,
+    output_format: Option<OutputFormat>,
 ) -> f64 {
     let url = &format!("{BASE_URL}/{UPLOAD_URL}");
     let payload: Vec<u8> = vec![1; payload_size_bytes];
@@ -221,7 +221,7 @@ fn test_upload(
         let mbits = (payload_size_bytes as f64 * 8.0 / 1_000_000.0) / duration.as_secs_f64();
         (status_code, mbits, duration)
     };
-    if outupt_format.is_none() {
+    if output_format.is_none() {
         print_current_speed(mbits, duration, status_code, payload_size_bytes);
     }
     mbits
@@ -230,7 +230,7 @@ fn test_upload(
 fn test_download(
     client: &Client,
     payload_size_bytes: usize,
-    outupt_format: Option<OutputFormat>,
+    output_format: Option<OutputFormat>,
 ) -> f64 {
     let url = &format!("{BASE_URL}/{DOWNLOAD_URL}{payload_size_bytes}");
     let req_builder = client.get(url);
@@ -243,7 +243,7 @@ fn test_download(
         let mbits = (payload_size_bytes as f64 * 8.0 / 1_000_000.0) / duration.as_secs_f64();
         (status_code, mbits, duration)
     };
-    if outupt_format.is_none() {
+    if output_format.is_none() {
         print_current_speed(mbits, duration, status_code, payload_size_bytes);
     }
     mbits

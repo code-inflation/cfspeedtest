@@ -23,7 +23,7 @@ Options:
           Number of latency tests to run [default: 25]
   -m, --max-payload-size <MAX_PAYLOAD_SIZE>
           The max payload size in bytes to use [100k, 1m, 10m, 25m or 100m] [default: 10MB]
-  -o, --outupt-format <OUTUPT_FORMAT>
+  -o, --output-format <OUTPUT_FORMAT>
           Set the output format [csv, json or json-pretty] > This silences all other output to stdout
   -v, --verbose
           Enable verbose output i.e. print out boxplots of the measurements
