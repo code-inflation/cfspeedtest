@@ -49,16 +49,42 @@ pub(crate) struct SpeedTestOptions {
     /// Enable verbose output i.e. print out boxplots of the measurements
     #[arg(short, long)]
     verbose: bool,
-}
 
+    /// Force usage of IPv4
+    #[arg(long)]
+    ipv4: bool,
+
+    /// Force usage of IPv6
+    #[arg(long)]
+    ipv6: bool,
+}
+use std::net::IpAddr;
 fn main() {
     env_logger::init();
     let options = SpeedTestOptions::parse();
     if options.output_format.is_none() {
         println!("Starting Cloudflare speed test");
     }
-    let client = reqwest::blocking::Client::new();
-    speed_test(client, options);
+    let client;
+    if options.ipv4 {
+        client = reqwest::blocking::Client::builder()
+            .local_address("0.0.0.0".parse::<IpAddr>().unwrap())
+            .build();
+    } else if options.ipv6 {
+        client = reqwest::blocking::Client::builder()
+            .local_address(
+                "2001:0db8:85a3:0000:0000:8a2e:0370:7334"
+                    .parse::<IpAddr>()
+                    .unwrap(),
+            )
+            .build();
+    } else {
+        client = reqwest::blocking::Client::builder().build();
+    }
+    speed_test(
+        client.expect("Failed to initialize reqwest client"),
+        options,
+    );
 }
 
 fn parse_payload_size(input_string: &str) -> Result<PayloadSize, String> {
