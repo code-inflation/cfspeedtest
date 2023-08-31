@@ -72,11 +72,7 @@ fn main() {
             .build();
     } else if options.ipv6 {
         client = reqwest::blocking::Client::builder()
-            .local_address(
-                "2001:0db8:85a3:0000:0000:8a2e:0370:7334"
-                    .parse::<IpAddr>()
-                    .unwrap(),
-            )
+            .local_address("::1".parse::<IpAddr>().unwrap())
             .build();
     } else {
         client = reqwest::blocking::Client::builder().build();
