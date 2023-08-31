@@ -27,6 +27,10 @@ Options:
           Set the output format [csv, json or json-pretty] > This silences all other output to stdout
   -v, --verbose
           Enable verbose output i.e. print out boxplots of the measurements
+      --ipv4
+          Force usage of IPv4
+      --ipv6
+          Force usage of IPv6
   -h, --help
           Print help
   -V, --version
