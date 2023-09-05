@@ -3,7 +3,7 @@ use crate::measurements::log_measurements;
 use crate::measurements::Measurement;
 use crate::progress::print_progress;
 use crate::OutputFormat;
-use crate::SpeedTestOptions;
+use crate::SpeedTestCLIOptions;
 use log;
 use regex::Regex;
 use reqwest::{blocking::Client, header::HeaderValue, StatusCode};
@@ -64,7 +64,7 @@ impl PayloadSize {
     }
 }
 
-struct Metadata {
+pub struct Metadata {
     city: String,
     country: String,
     ip: String,
@@ -82,7 +82,7 @@ impl Display for Metadata {
     }
 }
 
-pub fn speed_test(client: Client, options: SpeedTestOptions) {
+pub fn speed_test(client: Client, options: SpeedTestCLIOptions) {
     let metadata = fetch_metadata(&client);
     if options.output_format.is_none() {
         println!("{metadata}");
@@ -113,7 +113,7 @@ pub fn speed_test(client: Client, options: SpeedTestOptions) {
     );
 }
 
-fn run_latency_test(
+pub fn run_latency_test(
     client: &Client,
     nr_latency_tests: u32,
     output_format: Option<OutputFormat>,
@@ -135,7 +135,7 @@ fn run_latency_test(
     (measurements, avg_latency)
 }
 
-fn test_latency(client: &Client) -> f64 {
+pub fn test_latency(client: &Client) -> f64 {
     let url = &format!("{}/{}{}", BASE_URL, DOWNLOAD_URL, 0);
     let req_builder = client.get(url);
 
@@ -167,6 +167,7 @@ fn test_latency(client: &Client) -> f64 {
     }
     req_latency
 }
+
 fn run_tests(
     client: &Client,
     test_fn: fn(&Client, usize, Option<OutputFormat>) -> f64,
@@ -205,7 +206,7 @@ fn run_tests(
     measurements
 }
 
-fn test_upload(
+pub fn test_upload(
     client: &Client,
     payload_size_bytes: usize,
     output_format: Option<OutputFormat>,
@@ -227,7 +228,7 @@ fn test_upload(
     mbits
 }
 
-fn test_download(
+pub fn test_download(
     client: &Client,
     payload_size_bytes: usize,
     output_format: Option<OutputFormat>,
@@ -264,7 +265,7 @@ fn print_current_speed(
     );
 }
 
-fn fetch_metadata(client: &Client) -> Metadata {
+pub fn fetch_metadata(client: &Client) -> Metadata {
     let url = &format!("{}/{}{}", BASE_URL, DOWNLOAD_URL, 0);
     let headers = client
         .get(url)
