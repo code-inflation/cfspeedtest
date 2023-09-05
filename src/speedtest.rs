@@ -18,13 +18,13 @@ const DOWNLOAD_URL: &str = "__down?bytes=";
 const UPLOAD_URL: &str = "__up";
 
 #[derive(Clone, Copy, Debug, Hash, Serialize, Eq, PartialEq)]
-pub(crate) enum TestType {
+pub enum TestType {
     Download,
     Upload,
 }
 
 #[derive(Clone, Debug)]
-pub(crate) enum PayloadSize {
+pub enum PayloadSize {
     K100 = 100_000,
     M1 = 1_000_000,
     M10 = 10_000_000,
@@ -82,7 +82,7 @@ impl Display for Metadata {
     }
 }
 
-pub(crate) fn speed_test(client: Client, options: SpeedTestOptions) {
+pub fn speed_test(client: Client, options: SpeedTestOptions) {
     let metadata = fetch_metadata(&client);
     if options.output_format.is_none() {
         println!("{metadata}");
