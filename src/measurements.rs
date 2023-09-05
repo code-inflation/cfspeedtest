@@ -18,7 +18,7 @@ struct StatMeasurement {
 }
 
 #[derive(Serialize)]
-pub(crate) struct Measurement {
+pub struct Measurement {
     pub(crate) test_type: TestType,
     pub(crate) payload_size: usize,
     pub(crate) mbit: f64,
@@ -40,9 +40,9 @@ pub(crate) fn log_measurements(
     measurements: &[Measurement],
     payload_sizes: Vec<usize>,
     verbose: bool,
-    output_format: Option<OutputFormat>,
+    output_format: OutputFormat,
 ) {
-    if output_format.is_none() {
+    if output_format == OutputFormat::StdOut {
         println!("\nSummary Statistics");
         println!("Type     Payload |  min/max/avg in mbit/s");
     }
@@ -62,23 +62,24 @@ pub(crate) fn log_measurements(
             ))
         });
     match output_format {
-        Some(OutputFormat::Csv) => {
+        OutputFormat::Csv => {
             let mut wtr = csv::Writer::from_writer(io::stdout());
             for measurement in &stat_measurements {
                 wtr.serialize(measurement).unwrap();
             }
             wtr.flush().unwrap();
         }
-        Some(OutputFormat::Json) => {
+        OutputFormat::Json => {
             serde_json::to_writer(io::stdout(), &stat_measurements).unwrap();
             println!();
         }
-        Some(OutputFormat::JsonPretty) => {
+        OutputFormat::JsonPretty => {
             // json_pretty output test
             serde_json::to_writer_pretty(io::stdout(), &stat_measurements).unwrap();
             println!();
         }
-        None => {}
+        OutputFormat::StdOut => {}
+        OutputFormat::None => {}
     }
 }
 
@@ -86,7 +87,7 @@ fn log_measurements_by_test_type(
     measurements: &[Measurement],
     payload_sizes: Vec<usize>,
     verbose: bool,
-    output_format: Option<OutputFormat>,
+    output_format: OutputFormat,
     test_type: TestType,
 ) -> Vec<StatMeasurement> {
     let mut stat_measurements: Vec<StatMeasurement> = Vec::new();
@@ -111,7 +112,7 @@ fn log_measurements_by_test_type(
             max,
             avg,
         });
-        if output_format.is_none() {
+        if output_format == OutputFormat::StdOut {
             println!(
                 "{fmt_test_type:<9} {formated_payload:<7}|  min {min:<7.2} max {max:<7.2} avg {avg:<7.2}"
             );

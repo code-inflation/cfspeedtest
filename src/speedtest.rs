@@ -82,9 +82,9 @@ impl Display for Metadata {
     }
 }
 
-pub fn speed_test(client: Client, options: SpeedTestCLIOptions) {
+pub fn speed_test(client: Client, options: SpeedTestCLIOptions) -> Vec<Measurement> {
     let metadata = fetch_metadata(&client);
-    if options.output_format.is_none() {
+    if options.output_format == OutputFormat::StdOut {
         println!("{metadata}");
     }
     run_latency_test(&client, options.nr_latency_tests, options.output_format);
@@ -111,23 +111,25 @@ pub fn speed_test(client: Client, options: SpeedTestCLIOptions) {
         options.verbose,
         options.output_format,
     );
+    measurements
 }
 
 pub fn run_latency_test(
     client: &Client,
     nr_latency_tests: u32,
-    output_format: Option<OutputFormat>,
+    output_format: OutputFormat,
 ) -> (Vec<f64>, f64) {
     let mut measurements: Vec<f64> = Vec::new();
     for i in 0..=nr_latency_tests {
-        if output_format.is_none() {
+        if output_format == OutputFormat::StdOut {
             print_progress("latency test", i, nr_latency_tests);
         }
         let latency = test_latency(client);
         measurements.push(latency);
     }
     let avg_latency = measurements.iter().sum::<f64>() / measurements.len() as f64;
-    if output_format.is_none() {
+
+    if output_format == OutputFormat::StdOut {
         println!(
             "\nAvg GET request latency {avg_latency:.2} ms (RTT excluding server processing time)\n"
         );
@@ -170,17 +172,17 @@ pub fn test_latency(client: &Client) -> f64 {
 
 fn run_tests(
     client: &Client,
-    test_fn: fn(&Client, usize, Option<OutputFormat>) -> f64,
+    test_fn: fn(&Client, usize, OutputFormat) -> f64,
     test_type: TestType,
     payload_sizes: Vec<usize>,
     nr_tests: u32,
-    output_format: Option<OutputFormat>,
+    output_format: OutputFormat,
 ) -> Vec<Measurement> {
     let mut measurements: Vec<Measurement> = Vec::new();
     for payload_size in payload_sizes {
         log::debug!("running tests for payload_size {payload_size}");
         for i in 0..nr_tests {
-            if output_format.is_none() {
+            if output_format == OutputFormat::StdOut {
                 print_progress(
                     &format!("{:?} {:<5}", test_type, format_bytes(payload_size)),
                     i,
@@ -194,7 +196,7 @@ fn run_tests(
                 mbit,
             });
         }
-        if output_format.is_none() {
+        if output_format == OutputFormat::StdOut {
             print_progress(
                 &format!("{:?} {:<5}", test_type, format_bytes(payload_size)),
                 nr_tests,
@@ -206,11 +208,7 @@ fn run_tests(
     measurements
 }
 
-pub fn test_upload(
-    client: &Client,
-    payload_size_bytes: usize,
-    output_format: Option<OutputFormat>,
-) -> f64 {
+pub fn test_upload(client: &Client, payload_size_bytes: usize, output_format: OutputFormat) -> f64 {
     let url = &format!("{BASE_URL}/{UPLOAD_URL}");
     let payload: Vec<u8> = vec![1; payload_size_bytes];
     let req_builder = client.post(url).body(payload);
@@ -222,7 +220,7 @@ pub fn test_upload(
         let mbits = (payload_size_bytes as f64 * 8.0 / 1_000_000.0) / duration.as_secs_f64();
         (status_code, mbits, duration)
     };
-    if output_format.is_none() {
+    if output_format == OutputFormat::StdOut {
         print_current_speed(mbits, duration, status_code, payload_size_bytes);
     }
     mbits
@@ -231,7 +229,7 @@ pub fn test_upload(
 pub fn test_download(
     client: &Client,
     payload_size_bytes: usize,
-    output_format: Option<OutputFormat>,
+    output_format: OutputFormat,
 ) -> f64 {
     let url = &format!("{BASE_URL}/{DOWNLOAD_URL}{payload_size_bytes}");
     let req_builder = client.get(url);
@@ -244,7 +242,7 @@ pub fn test_download(
         let mbits = (payload_size_bytes as f64 * 8.0 / 1_000_000.0) / duration.as_secs_f64();
         (status_code, mbits, duration)
     };
-    if output_format.is_none() {
+    if output_format == OutputFormat::StdOut {
         print_current_speed(mbits, duration, status_code, payload_size_bytes);
     }
     mbits

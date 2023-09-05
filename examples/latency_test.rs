@@ -7,7 +7,7 @@ fn main() {
     let (latency_results, avg_latency) = run_latency_test(
         &reqwest::blocking::Client::new(),
         25,
-        Some(OutputFormat::Json),
+        OutputFormat::None, // don't write to stdout while running the test
     );
 
     println!("average latancy in ms: {avg_latency}");

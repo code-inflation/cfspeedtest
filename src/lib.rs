@@ -2,15 +2,25 @@ pub mod boxplot;
 pub mod measurements;
 pub mod progress;
 pub mod speedtest;
+use std::fmt;
+use std::fmt::Display;
 
 use clap::Parser;
 use speedtest::PayloadSize;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum OutputFormat {
     Csv,
     Json,
     JsonPretty,
+    StdOut,
+    None,
+}
+
+impl Display for OutputFormat {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
 }
 
 impl OutputFormat {
@@ -19,6 +29,7 @@ impl OutputFormat {
             "csv" => Ok(Self::Csv),
             "json" => Ok(Self::Json),
             "json_pretty" | "json-pretty" => Ok(Self::JsonPretty),
+            "stdout" => Ok(Self::StdOut),
             _ => Err("Value needs to be one of csv, json or json-pretty".to_string()),
         }
     }
@@ -42,8 +53,8 @@ pub struct SpeedTestCLIOptions {
 
     /// Set the output format [csv, json or json-pretty] >
     /// This silences all other output to stdout
-    #[arg(value_parser = parse_output_format, short, long)]
-    pub output_format: Option<OutputFormat>,
+    #[arg(value_parser = parse_output_format, short, long, default_value_t = OutputFormat::StdOut)]
+    pub output_format: OutputFormat,
 
     /// Enable verbose output i.e. print out boxplots of the measurements
     #[arg(short, long)]

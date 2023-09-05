@@ -7,7 +7,7 @@ fn main() {
     let download_speed = test_download(
         &reqwest::blocking::Client::new(),
         10_000_000,
-        Some(OutputFormat::Json),
+        OutputFormat::None, // don't write to stdout while running the test
     );
 
     println!("download speed in mbit: {download_speed}")

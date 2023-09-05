@@ -1,4 +1,5 @@
 use cfspeedtest::speedtest;
+use cfspeedtest::OutputFormat;
 use cfspeedtest::SpeedTestCLIOptions;
 use clap::Parser;
 use std::net::IpAddr;
@@ -8,7 +9,7 @@ use speedtest::speed_test;
 fn main() {
     env_logger::init();
     let options = SpeedTestCLIOptions::parse();
-    if options.output_format.is_none() {
+    if options.output_format == OutputFormat::StdOut {
         println!("Starting Cloudflare speed test");
     }
     let client;
