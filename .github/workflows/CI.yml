@@ -22,3 +22,11 @@ jobs:
       run: cargo build --verbose
     - name: Run tests
       run: cargo test --verbose
+    - name: Run example - simple_speedtest
+      run: cargo run --example simple_speedtest
+    - name: Run example - download_test
+      run: cargo run --example download_test
+    - name: Run example - latency_test
+      run: cargo run --example latency_test
+    - name: Run CLI
+      run: cargo run
