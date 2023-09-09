@@ -19,9 +19,9 @@ struct StatMeasurement {
 
 #[derive(Serialize)]
 pub struct Measurement {
-    pub(crate) test_type: TestType,
-    pub(crate) payload_size: usize,
-    pub(crate) mbit: f64,
+    pub test_type: TestType,
+    pub payload_size: usize,
+    pub mbit: f64,
 }
 
 impl Display for Measurement {
