@@ -50,7 +50,7 @@ impl PayloadSize {
         }
     }
 
-    fn sizes_from_max(max_payload_size: PayloadSize) -> Vec<usize> {
+    pub fn sizes_from_max(max_payload_size: PayloadSize) -> Vec<usize> {
         log::debug!("getting payload iterations for max_payload_size {max_payload_size:?}");
         let payload_bytes: Vec<usize> =
             vec![100_000, 1_000_000, 10_000_000, 25_000_000, 100_000_000];
@@ -170,7 +170,7 @@ pub fn test_latency(client: &Client) -> f64 {
     req_latency
 }
 
-fn run_tests(
+pub fn run_tests(
     client: &Client,
     test_fn: fn(&Client, usize, OutputFormat) -> f64,
     test_type: TestType,
