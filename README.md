@@ -1,5 +1,9 @@
 # cfspeedtest - Unofficial CLI for [speed.cloudflare.com](https://speed.cloudflare.com)
-[![Build](https://github.com/code-inflation/cfspeedtest/actions/workflows/CI.yml/badge.svg?branch=master)](https://github.com/code-inflation/cfspeedtest/actions/workflow[![CI](https://github.com/code-inflation/cfspeedtest/actions/workflows/CI.yml/badge.svg)](https://github.com/code-inflation/cfspeedtest/actions/workflows/CI.yml)s/CI.yml)
+![CI](https://github.com/code-inflation/cfspeedtest/actions/workflows/CI.yml/badge.svg)
+![Release](https://github.com/code-inflation/cfspeedtest/actions/workflows/release.yaml/badge.svg)
+![Crates.io Version](https://img.shields.io/crates/v/cfspeedtest)
+![Crates.io Downloads](https://img.shields.io/crates/d/cfspeedtest?label=Crates.io%20downloads)
+
 
 ## Installation
 Install using `cargo`:
