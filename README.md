@@ -49,8 +49,6 @@ Example with json-pretty output:
 
 
 ## Development
-### TODO
-- Dynamic payload sizing depending on network speed
 
 ### Logging
 Set the log level using the `RUST_LOG` env var:  
