@@ -67,6 +67,10 @@ pub struct SpeedTestCLIOptions {
     /// Force usage of IPv6
     #[arg(long)]
     pub ipv6: bool,
+
+    /// Enable dynamic payload sizing
+    #[arg(short, long, default_value_t = true)]
+    pub dynamic_payload_sizing: bool,
 }
 
 fn parse_payload_size(input_string: &str) -> Result<PayloadSize, String> {
