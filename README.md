@@ -26,15 +26,17 @@ Options:
       --nr-latency-tests <NR_LATENCY_TESTS>
           Number of latency tests to run [default: 25]
   -m, --max-payload-size <MAX_PAYLOAD_SIZE>
-          The max payload size in bytes to use [100k, 1m, 10m, 25m or 100m] [default: 10MB]
+          The max payload size in bytes to use [100k, 1m, 10m, 25m or 100m] [default: 25MB]
   -o, --output-format <OUTPUT_FORMAT>
-          Set the output format [csv, json or json-pretty] > This silences all other output to stdout
+          Set the output format [csv, json or json-pretty] > This silences all other output to stdout [default: StdOut]
   -v, --verbose
-          Enable verbose output i.e. print out boxplots of the measurements
+          Enable verbose output i.e. print boxplots of the measurements
       --ipv4
           Force usage of IPv4
       --ipv6
           Force usage of IPv6
+  -d, --disable-dynamic-max-payload-size
+          Disables dynamically skipping tests with larger payload sizes if the tests for the previous payload size took longer than 5 seconds
   -h, --help
           Print help
   -V, --version
