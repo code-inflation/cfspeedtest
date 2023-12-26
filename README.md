@@ -15,7 +15,7 @@ Or download the latest binary release here: [cfspeedtest/releases/latest](https:
 
 ## Usage
 ```
-cfspeedtest --help
+> cfspeedtest --help
 Unofficial CLI for speed.cloudflare.com
 
 Usage: cfspeedtest [OPTIONS]
