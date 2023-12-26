@@ -98,27 +98,32 @@ fn log_measurements_by_test_type(
             .filter(|m| m.payload_size == payload_size)
             .map(|m| m.mbit)
             .collect();
-        let (min, q1, median, q3, max, avg) = calc_stats(type_measurements).unwrap();
 
-        let formated_payload = format_bytes(payload_size);
-        let fmt_test_type = format!("{:?}", test_type);
-        stat_measurements.push(StatMeasurement {
-            test_type,
-            payload_size,
-            min,
-            q1,
-            median,
-            q3,
-            max,
-            avg,
-        });
-        if output_format == OutputFormat::StdOut {
-            println!(
+        // check if there are any measurements for the current payload_size
+        // skip stats calculation if there are no measurements
+        if !type_measurements.is_empty() {
+            let (min, q1, median, q3, max, avg) = calc_stats(type_measurements).unwrap();
+
+            let formated_payload = format_bytes(payload_size);
+            let fmt_test_type = format!("{:?}", test_type);
+            stat_measurements.push(StatMeasurement {
+                test_type,
+                payload_size,
+                min,
+                q1,
+                median,
+                q3,
+                max,
+                avg,
+            });
+            if output_format == OutputFormat::StdOut {
+                println!(
                 "{fmt_test_type:<9} {formated_payload:<7}|  min {min:<7.2} max {max:<7.2} avg {avg:<7.2}"
             );
-            if verbose {
-                let plot = boxplot::render_plot(min, q1, median, q3, max);
-                println!("{plot}\n");
+                if verbose {
+                    let plot = boxplot::render_plot(min, q1, median, q3, max);
+                    println!("{plot}\n");
+                }
             }
         }
     }

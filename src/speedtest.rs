@@ -96,7 +96,7 @@ pub fn speed_test(client: Client, options: SpeedTestCLIOptions) -> Vec<Measureme
         payload_sizes.clone(),
         options.nr_tests,
         options.output_format,
-        options.dynamic_payload_sizing,
+        options.disable_dynamic_max_payload_size,
     );
     measurements.extend(run_tests(
         &client,
@@ -105,9 +105,8 @@ pub fn speed_test(client: Client, options: SpeedTestCLIOptions) -> Vec<Measureme
         payload_sizes.clone(),
         options.nr_tests,
         options.output_format,
-        options.dynamic_payload_sizing,
+        options.disable_dynamic_max_payload_size,
     ));
-    // TODO adjust payload_sizes --> remove payloads that are not populated due to dynamic sizing
     log_measurements(
         &measurements,
         payload_sizes,
@@ -173,7 +172,7 @@ pub fn test_latency(client: &Client) -> f64 {
     req_latency
 }
 
-const TIME_THRESHOLD: Duration = Duration::from_secs(1);
+const TIME_THRESHOLD: Duration = Duration::from_secs(5);
 
 pub fn run_tests(
     client: &Client,
@@ -182,7 +181,7 @@ pub fn run_tests(
     payload_sizes: Vec<usize>,
     nr_tests: u32,
     output_format: OutputFormat,
-    dynamic_payload_sizing: bool,
+    disable_dynamic_max_payload_size: bool,
 ) -> Vec<Measurement> {
     let mut measurements: Vec<Measurement> = Vec::new();
     for payload_size in payload_sizes {
@@ -212,7 +211,9 @@ pub fn run_tests(
             println!()
         }
         let duration = start.elapsed();
-        if dynamic_payload_sizing && duration > TIME_THRESHOLD {
+
+        // only check TIME_THRESHOLD if dynamic max payload sizing is not disabled
+        if !disable_dynamic_max_payload_size && duration > TIME_THRESHOLD {
             log::info!("Exceeded threshold");
             break;
         }

@@ -68,9 +68,10 @@ pub struct SpeedTestCLIOptions {
     #[arg(long)]
     pub ipv6: bool,
 
-    /// Enable dynamic payload sizing
-    #[arg(short, long, default_value_t = true)]
-    pub dynamic_payload_sizing: bool,
+    /// Disables dynamically skipping tests with larger payload sizes if the tests for the previous payload
+    /// size took longer than 5 seconds
+    #[arg(short, long)]
+    pub disable_dynamic_max_payload_size: bool,
 }
 
 fn parse_payload_size(input_string: &str) -> Result<PayloadSize, String> {
