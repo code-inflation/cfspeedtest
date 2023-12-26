@@ -56,7 +56,7 @@ pub struct SpeedTestCLIOptions {
     #[arg(value_parser = parse_output_format, short, long, default_value_t = OutputFormat::StdOut)]
     pub output_format: OutputFormat,
 
-    /// Enable verbose output i.e. print out boxplots of the measurements
+    /// Enable verbose output i.e. print boxplots of the measurements
     #[arg(short, long)]
     pub verbose: bool,
 
