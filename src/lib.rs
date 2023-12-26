@@ -48,7 +48,7 @@ pub struct SpeedTestCLIOptions {
     pub nr_latency_tests: u32,
 
     /// The max payload size in bytes to use [100k, 1m, 10m, 25m or 100m]
-    #[arg(value_parser = parse_payload_size, short, long, default_value_t = PayloadSize::M10)]
+    #[arg(value_parser = parse_payload_size, short, long, default_value_t = PayloadSize::M25)]
     pub max_payload_size: PayloadSize,
 
     /// Set the output format [csv, json or json-pretty] >
@@ -56,7 +56,7 @@ pub struct SpeedTestCLIOptions {
     #[arg(value_parser = parse_output_format, short, long, default_value_t = OutputFormat::StdOut)]
     pub output_format: OutputFormat,
 
-    /// Enable verbose output i.e. print out boxplots of the measurements
+    /// Enable verbose output i.e. print boxplots of the measurements
     #[arg(short, long)]
     pub verbose: bool,
 
@@ -67,6 +67,11 @@ pub struct SpeedTestCLIOptions {
     /// Force usage of IPv6
     #[arg(long)]
     pub ipv6: bool,
+
+    /// Disables dynamically skipping tests with larger payload sizes if the tests for the previous payload
+    /// size took longer than 5 seconds
+    #[arg(short, long)]
+    pub disable_dynamic_max_payload_size: bool,
 }
 
 fn parse_payload_size(input_string: &str) -> Result<PayloadSize, String> {
