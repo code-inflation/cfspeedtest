@@ -48,7 +48,7 @@ pub struct SpeedTestCLIOptions {
     pub nr_latency_tests: u32,
 
     /// The max payload size in bytes to use [100k, 1m, 10m, 25m or 100m]
-    #[arg(value_parser = parse_payload_size, short, long, default_value_t = PayloadSize::M10)]
+    #[arg(value_parser = parse_payload_size, short, long, default_value_t = PayloadSize::M25)]
     pub max_payload_size: PayloadSize,
 
     /// Set the output format [csv, json or json-pretty] >
