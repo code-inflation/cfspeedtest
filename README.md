@@ -58,6 +58,17 @@ Set the log level using the `RUST_LOG` env var:
 RUST_LOG=debug cargo run
 ```
 ### Release
+#### Using `cargo-release`
+Install `cargo-release`:
+```sh
+cargo install cargo-release
+```
+Create the release (version bump levels are `[patch, minor, major]`):
+```sh
+cargo release patch --execute
+```
+This will bump the `cfspeedtest` version in both `Cargo.toml` and `Cargo.lock` and run `cargo publish` to push the release on crates.io. Additionally a version git tag is created and pushed to `master` triggering the GH action that creates the binary releases.
+
 #### On GitHub
 Release builds are published automatically using github actions. They are triggered when a git tag in the format `v[0-9]+.*` is pushed.
 ```sh
