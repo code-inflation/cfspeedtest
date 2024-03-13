@@ -10,8 +10,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
-
+  rust-build-and-test:
     runs-on: ubuntu-latest
 
     steps:
@@ -30,3 +29,11 @@ jobs:
       run: cargo run --example latency_test
     - name: Run CLI
       run: cargo run
+
+  docker-build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Build container image
+      run: docker build . -t cfspeedtest:ci-build
