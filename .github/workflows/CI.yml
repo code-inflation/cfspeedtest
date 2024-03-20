@@ -30,7 +30,7 @@ jobs:
     - name: Run CLI
       run: cargo run
 
-  docker-build-and-push:
+  docker-build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
