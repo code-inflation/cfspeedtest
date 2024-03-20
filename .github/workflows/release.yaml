@@ -66,6 +66,6 @@ jobs:
           file: ./Dockerfile
           push: true
           tags: |
-            yourusername/cfspeedtest:${{ github.ref_name }}
-            yourusername/cfspeedtest:latest
+            cybuerg/cfspeedtest:${{ github.ref_name }}
+            cybuerg/cfspeedtest:latest
           build-args: VERSION=${{ github.ref_name }}
