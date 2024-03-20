@@ -62,10 +62,8 @@ jobs:
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
-          context: .
-          file: ./Dockerfile
           push: true
+          platforms: linux/amd64,linux/arm64
           tags: |
             cybuerg/cfspeedtest:${{ github.ref_name }}
             cybuerg/cfspeedtest:latest
-          build-args: VERSION=${{ github.ref_name }}
