@@ -13,6 +13,11 @@ cargo install cfspeedtest
 
 Or download the latest binary release here: [cfspeedtest/releases/latest](https://github.com/code-inflation/cfspeedtest/releases/latest)
 
+Alternatively there is also a [docker image available on dockerhub](https://hub.docker.com/r/cybuerg/cfspeedtest)
+```sh
+docker run cybuerg/cfspeedtest
+```
+
 ## Usage
 ```
 > cfspeedtest --help
