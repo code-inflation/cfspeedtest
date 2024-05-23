@@ -13,7 +13,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-const BASE_URL: &str = "http://speed.cloudflare.com";
+const BASE_URL: &str = "https://speed.cloudflare.com";
 const DOWNLOAD_URL: &str = "__down?bytes=";
 const UPLOAD_URL: &str = "__up";
 
