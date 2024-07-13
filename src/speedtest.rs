@@ -6,7 +6,7 @@ use crate::OutputFormat;
 use crate::SpeedTestCLIOptions;
 use log;
 use regex::Regex;
-use reqwest::{blocking::Client, header::HeaderValue, StatusCode};
+use reqwest::{blocking::Client, StatusCode};
 use serde::Serialize;
 use std::{
     fmt::Display,
@@ -300,8 +300,7 @@ fn extract_header_value(
 ) -> String {
     headers
         .get(header_name)
-        .unwrap_or(&HeaderValue::from_str(na_value).unwrap())
-        .to_str()
-        .unwrap()
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or(na_value)
         .to_owned()
 }
