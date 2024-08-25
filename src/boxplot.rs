@@ -6,7 +6,13 @@ const PLOT_WIDTH: usize = 80;
 fn generate_axis_labels(minima: f64, maxima: f64) -> String {
     let mut labels = String::new();
     write!(labels, "{:<10.2}", minima).unwrap();
-    write!(labels, "{:^width$.2}", (minima + maxima) / 2.0, width = PLOT_WIDTH - 20).unwrap();
+    write!(
+        labels,
+        "{:^width$.2}",
+        (minima + maxima) / 2.0,
+        width = PLOT_WIDTH - 20
+    )
+    .unwrap();
     write!(labels, "{:>10.2}", maxima).unwrap();
     labels
 }
