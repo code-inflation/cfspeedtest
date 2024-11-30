@@ -88,25 +88,33 @@ pub fn speed_test(client: Client, options: SpeedTestCLIOptions) -> Vec<Measureme
         println!("{metadata}");
     }
     run_latency_test(&client, options.nr_latency_tests, options.output_format);
-    let payload_sizes = PayloadSize::sizes_from_max(options.max_payload_size);
-    let mut measurements = run_tests(
-        &client,
-        test_download,
-        TestType::Download,
-        payload_sizes.clone(),
-        options.nr_tests,
-        options.output_format,
-        options.disable_dynamic_max_payload_size,
-    );
-    measurements.extend(run_tests(
-        &client,
-        test_upload,
-        TestType::Upload,
-        payload_sizes.clone(),
-        options.nr_tests,
-        options.output_format,
-        options.disable_dynamic_max_payload_size,
-    ));
+    let payload_sizes = PayloadSize::sizes_from_max(options.max_payload_size.clone());
+    let mut measurements = Vec::new();
+
+    if options.should_download() {
+        measurements.extend(run_tests(
+            &client,
+            test_download,
+            TestType::Download,
+            payload_sizes.clone(),
+            options.nr_tests,
+            options.output_format,
+            options.disable_dynamic_max_payload_size,
+        ));
+    }
+
+    if options.should_upload() {
+        measurements.extend(run_tests(
+            &client,
+            test_upload,
+            TestType::Upload,
+            payload_sizes.clone(),
+            options.nr_tests,
+            options.output_format,
+            options.disable_dynamic_max_payload_size,
+        ));
+    }
+
     log_measurements(
         &measurements,
         payload_sizes,
