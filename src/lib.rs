@@ -72,6 +72,26 @@ pub struct SpeedTestCLIOptions {
     /// size took longer than 5 seconds
     #[arg(short, long)]
     pub disable_dynamic_max_payload_size: bool,
+
+    /// Test download speed only
+    #[arg(long, conflicts_with = "upload_only")]
+    pub download_only: bool,
+
+    /// Test upload speed only
+    #[arg(long, conflicts_with = "download_only")]
+    pub upload_only: bool,
+}
+
+impl SpeedTestCLIOptions {
+    /// Returns whether download tests should be performed
+    pub fn should_download(&self) -> bool {
+        self.download_only || !self.upload_only
+    }
+
+    /// Returns whether upload tests should be performed
+    pub fn should_upload(&self) -> bool {
+        self.upload_only || !self.download_only
+    }
 }
 
 fn parse_payload_size(input_string: &str) -> Result<PayloadSize, String> {

@@ -42,6 +42,10 @@ Options:
           Force usage of IPv6
   -d, --disable-dynamic-max-payload-size
           Disables dynamically skipping tests with larger payload sizes if the tests for the previous payload size took longer than 5 seconds
+      --download-only
+          Test download speed only
+      --upload-only
+          Test upload speed only
   -h, --help
           Print help
   -V, --version
