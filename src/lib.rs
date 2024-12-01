@@ -74,11 +74,11 @@ pub struct SpeedTestCLIOptions {
     pub disable_dynamic_max_payload_size: bool,
 
     /// Test download speed only
-    #[arg(long)]
+    #[arg(long, conflicts_with = "upload_only")]
     pub download_only: bool,
 
     /// Test upload speed only
-    #[arg(long)]
+    #[arg(long, conflicts_with = "download_only")]
     pub upload_only: bool,
 }
 
