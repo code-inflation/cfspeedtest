@@ -10,6 +10,8 @@ fn main() {
         ipv4: false,                       // don't force ipv4 usage
         ipv6: false,                       // don't force ipv6 usage
         verbose: false,
+        upload_only: false,
+        download_only: false,
         nr_tests: 5,
         nr_latency_tests: 20,
         max_payload_size: PayloadSize::M10,
