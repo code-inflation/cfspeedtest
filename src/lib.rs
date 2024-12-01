@@ -85,12 +85,12 @@ pub struct SpeedTestCLIOptions {
 impl SpeedTestCLIOptions {
     /// Returns whether download tests should be performed
     pub fn should_download(&self) -> bool {
-        self.download_only || (!self.download_only && !self.upload_only)
+        self.download_only || !self.upload_only
     }
 
     /// Returns whether upload tests should be performed
     pub fn should_upload(&self) -> bool {
-        self.upload_only || (!self.download_only && !self.upload_only)
+        self.upload_only || !self.download_only
     }
 }
 
