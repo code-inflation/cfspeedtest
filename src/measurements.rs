@@ -160,11 +160,9 @@ fn calc_stats(mbit_measurements: Vec<f64>) -> Option<(f64, f64, f64, f64, f64, f
             *sorted_data.last().unwrap(),
             *sorted_data.last().unwrap(),
             mbit_measurements.iter().sum::<f64>() / mbit_measurements.len() as f64,
-        ));
-    }
-
-    let mut sorted_data = mbit_measurements.clone();
-    sorted_data.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Less));
+        mbit_measurements.iter().sum::<f64>() / mbit_measurements.len() as f64,
+    ));
+}
 
     let q1 = if length % 2 == 0 {
         median(&sorted_data[0..length / 2])
