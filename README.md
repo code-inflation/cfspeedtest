@@ -27,7 +27,7 @@ Usage: cfspeedtest [OPTIONS]
 
 Options:
   -n, --nr-tests <NR_TESTS>
-          Number of test runs per payload size. Needs to be at least 4 [default: 10]
+          Number of test runs per payload size [default: 10]
       --nr-latency-tests <NR_LATENCY_TESTS>
           Number of latency tests to run [default: 25]
   -m, --max-payload-size <MAX_PAYLOAD_SIZE>

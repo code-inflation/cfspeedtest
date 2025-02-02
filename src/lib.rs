@@ -39,8 +39,8 @@ impl OutputFormat {
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 pub struct SpeedTestCLIOptions {
-    /// Number of test runs per payload size. Needs to be at least 4
-    #[arg(value_parser = clap::value_parser!(u32).range(4..1000), short, long, default_value_t = 10)]
+    /// Number of test runs per payload size.
+    #[arg(value_parser = clap::value_parser!(u32).range(1..1000), short, long, default_value_t = 10)]
     pub nr_tests: u32,
 
     /// Number of latency tests to run
