@@ -134,8 +134,33 @@ fn log_measurements_by_test_type(
 fn calc_stats(mbit_measurements: Vec<f64>) -> Option<(f64, f64, f64, f64, f64, f64)> {
     log::debug!("calc_stats for mbit_measurements {mbit_measurements:?}");
     let length = mbit_measurements.len();
-    if length < 4 {
+    if length == 0 {
         return None;
+    }
+
+    let mut sorted_data = mbit_measurements.clone();
+    sorted_data.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Less));
+
+    if length == 1 {
+        return Some((
+            sorted_data[0],
+            sorted_data[0],
+            sorted_data[0],
+            sorted_data[0],
+            sorted_data[0],
+            sorted_data[0],
+        ));
+    }
+
+    if length < 4 {
+        return Some((
+            *sorted_data.first().unwrap(),
+            *sorted_data.first().unwrap(),
+            median(&sorted_data),
+            *sorted_data.last().unwrap(),
+            *sorted_data.last().unwrap(),
+            mbit_measurements.iter().sum::<f64>() / mbit_measurements.len() as f64,
+        ));
     }
 
     let mut sorted_data = mbit_measurements.clone();
