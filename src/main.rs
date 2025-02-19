@@ -19,7 +19,7 @@ fn main() {
             .build();
     } else if options.ipv6 {
         client = reqwest::blocking::Client::builder()
-            .local_address("::1".parse::<IpAddr>().unwrap())
+            .local_address("::".parse::<IpAddr>().unwrap())
             .build();
     } else {
         client = reqwest::blocking::Client::builder().build();
