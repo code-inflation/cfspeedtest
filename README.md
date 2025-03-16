@@ -36,10 +36,10 @@ Options:
           Set the output format [csv, json or json-pretty] > This silences all other output to stdout [default: StdOut]
   -v, --verbose
           Enable verbose output i.e. print boxplots of the measurements
-      --ipv4
-          Force usage of IPv4
-      --ipv6
-          Force usage of IPv6
+      --ipv4 [<IPv4>]
+          Force IPv4 with provided source IPv4 address or the default IPv4 address bound to the main interface
+      --ipv6 [<IPv6>]
+          Force IPv6 with provided source IPv6 address or the default IPv6 address bound to the main interface
   -d, --disable-dynamic-max-payload-size
           Disables dynamically skipping tests with larger payload sizes if the tests for the previous payload size took longer than 5 seconds
       --download-only

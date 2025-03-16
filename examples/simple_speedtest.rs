@@ -7,8 +7,8 @@ fn main() {
     // define speedtest options
     let options = SpeedTestCLIOptions {
         output_format: OutputFormat::None, // don't write to stdout
-        ipv4: false,                       // don't force ipv4 usage
-        ipv6: false,                       // don't force ipv6 usage
+        ipv4: None,                        // don't force ipv4 usage
+        ipv6: None,                        // don't force ipv6 usage
         verbose: false,
         upload_only: false,
         download_only: false,
