@@ -6,6 +6,7 @@ use std::fmt;
 use std::fmt::Display;
 
 use clap::Parser;
+use clap_complete::Shell;
 use speedtest::PayloadSize;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -80,6 +81,10 @@ pub struct SpeedTestCLIOptions {
     /// Test upload speed only
     #[arg(long, conflicts_with = "download_only")]
     pub upload_only: bool,
+
+    /// Generate shell completion script for the specified shell
+    #[arg(long = "generate-completion", value_enum)]
+    pub completion: Option<Shell>,
 }
 
 impl SpeedTestCLIOptions {

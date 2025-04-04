@@ -58,6 +58,32 @@ Example usage:
 Example with json-pretty output:  
 [![asciicast](https://asciinema.org/a/P6IUAADtaCq3bT18GbYVHmksA.svg)](https://asciinema.org/a/P6IUAADtaCq3bT18GbYVHmksA)
 
+### Shell Completion
+
+`cfspeedtest` supports generating shell completion scripts. Use the `--generate-completion` flag followed by your shell name (e.g., `bash`, `zsh`, `fish`, `powershell`, `elvish`).
+
+Example for bash (add to `~/.bashrc` or similar):
+```sh
+cfspeedtest --generate-completion bash > ~/.local/share/bash-completion/completions/cfspeedtest
+# Or, if you don't have a completions directory set up:
+# source <(cfspeedtest --generate-completion bash)
+```
+
+Example for zsh (add to `~/.zshrc` or similar):
+```sh
+# Ensure your fpath includes a directory for completions, e.g., ~/.zfunc
+# mkdir -p ~/.zfunc
+# echo 'fpath=(~/.zfunc $fpath)' >> ~/.zshrc
+cfspeedtest --generate-completion zsh > ~/.zfunc/_cfspeedtest
+# You may need to run compinit:
+# autoload -U compinit && compinit
+```
+
+Example for fish:
+```sh
+cfspeedtest --generate-completion fish > ~/.config/fish/completions/cfspeedtest.fish
+```
+
 
 ## Development
 
