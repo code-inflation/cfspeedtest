@@ -43,25 +43,38 @@ jobs:
           key: ${{ runner.os }}-buildx-${{ github.sha }}
           restore-keys: |
             ${{ runner.os }}-buildx-
-      - name: Build and push Docker image
+      - name: Build Docker image for amd64
         uses: docker/build-push-action@v5
         with:
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           push: false
           tags: |
-            cybuerg/cfspeedtest:${{ github.sha }}
+            cybuerg/cfspeedtest:${{ github.sha }}-amd64
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
-          outputs: type=docker,dest=/tmp/docker-image.tar
+          outputs: type=docker,dest=/tmp/docker-image-amd64.tar
+          
+      - name: Build Docker image for arm64
+        uses: docker/build-push-action@v5
+        with:
+          platforms: linux/arm64
+          push: false
+          tags: |
+            cybuerg/cfspeedtest:${{ github.sha }}-arm64
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
+          outputs: type=docker,dest=/tmp/docker-image-arm64.tar
       - name: Move cache
         run: |
           rm -rf /tmp/.buildx-cache
           mv /tmp/.buildx-cache-new /tmp/.buildx-cache
-      - name: Upload Docker image as artifact
+      - name: Upload Docker images as artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: docker-image
-          path: /tmp/docker-image.tar
+          name: docker-images
+          path: |
+            /tmp/docker-image-amd64.tar
+            /tmp/docker-image-arm64.tar
           retention-days: 1
 
   verify-docker-image:
@@ -71,21 +84,25 @@ jobs:
       matrix:
         platform: [linux/amd64, linux/arm64]
     steps:
-      - name: Download Docker image
+      - name: Download Docker images
         uses: actions/download-artifact@v4
         with:
-          name: docker-image
+          name: docker-images
           path: /tmp
       - name: Load Docker image
         run: |
-          docker load < /tmp/docker-image.tar
+          if [ "${{ matrix.platform }}" = "linux/amd64" ]; then
+            docker load < /tmp/docker-image-amd64.tar
+          else
+            docker load < /tmp/docker-image-arm64.tar
+          fi
       - name: Verify amd64 image
         if: matrix.platform == 'linux/amd64'
         run: |
-          docker run --platform linux/amd64 cybuerg/cfspeedtest:${{ github.sha }} --help
-          docker run --platform linux/amd64 --entrypoint /bin/sh cybuerg/cfspeedtest:${{ github.sha }} -c "file /usr/local/bin/cfspeedtest" | grep "x86-64"
+          docker run cybuerg/cfspeedtest:${{ github.sha }}-amd64 --help
+          docker run --entrypoint /bin/sh cybuerg/cfspeedtest:${{ github.sha }}-amd64 -c "file /usr/local/bin/cfspeedtest" | grep "x86-64"
       - name: Verify arm64 image
         if: matrix.platform == 'linux/arm64'
         run: |
-          docker run --platform linux/arm64 cybuerg/cfspeedtest:${{ github.sha }} --help
-          docker run --platform linux/arm64 --entrypoint /bin/sh cybuerg/cfspeedtest:${{ github.sha }} -c "file /usr/local/bin/cfspeedtest" | grep "aarch64"
+          docker run cybuerg/cfspeedtest:${{ github.sha }}-arm64 --help
+          docker run --entrypoint /bin/sh cybuerg/cfspeedtest:${{ github.sha }}-arm64 -c "file /usr/local/bin/cfspeedtest" | grep "aarch64"
