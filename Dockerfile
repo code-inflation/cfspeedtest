@@ -39,7 +39,7 @@ RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then \
     fi
 
 FROM --platform=$TARGETPLATFORM debian:bullseye-slim
-RUN apt-get update && apt-get install -y --no-install-recommends tini && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends tini file && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /usr/local/bin/cfspeedtest /usr/local/bin/cfspeedtest
 
 # tini will be PID 1 and handle signal forwarding and process reaping
