@@ -51,7 +51,7 @@ jobs:
           tags: |
             cybuerg/cfspeedtest:${{ github.sha }}-amd64
           cache-from: type=local,src=/tmp/.buildx-cache
-          cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
+          cache-to: type=local,dest=/tmp/.buildx-cache-amd64,mode=max
           outputs: type=docker,dest=/tmp/docker-image-amd64.tar
           
       - name: Build Docker image for arm64
@@ -62,10 +62,13 @@ jobs:
           tags: |
             cybuerg/cfspeedtest:${{ github.sha }}-arm64
           cache-from: type=local,src=/tmp/.buildx-cache
-          cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
+          cache-to: type=local,dest=/tmp/.buildx-cache-arm64,mode=max
           outputs: type=docker,dest=/tmp/docker-image-arm64.tar
-      - name: Move cache
+      - name: Merge and move cache
         run: |
+          mkdir -p /tmp/.buildx-cache-new
+          cp -r /tmp/.buildx-cache-amd64/* /tmp/.buildx-cache-new/ || true
+          cp -r /tmp/.buildx-cache-arm64/* /tmp/.buildx-cache-new/ || true
           rm -rf /tmp/.buildx-cache
           mv /tmp/.buildx-cache-new /tmp/.buildx-cache
       - name: Upload Docker images as artifacts
