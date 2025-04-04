@@ -52,7 +52,40 @@ jobs:
             cybuerg/cfspeedtest:${{ github.sha }}
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
+          outputs: type=docker,dest=/tmp/docker-image.tar
       - name: Move cache
         run: |
           rm -rf /tmp/.buildx-cache
           mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+      - name: Upload Docker image as artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: docker-image
+          path: /tmp/docker-image.tar
+          retention-days: 1
+
+  verify-docker-image:
+    needs: docker-build
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        platform: [linux/amd64, linux/arm64]
+    steps:
+      - name: Download Docker image
+        uses: actions/download-artifact@v3
+        with:
+          name: docker-image
+          path: /tmp
+      - name: Load Docker image
+        run: |
+          docker load < /tmp/docker-image.tar
+      - name: Verify amd64 image
+        if: matrix.platform == 'linux/amd64'
+        run: |
+          docker run --platform linux/amd64 cybuerg/cfspeedtest:${{ github.sha }} --help
+          docker run --platform linux/amd64 --entrypoint /bin/sh cybuerg/cfspeedtest:${{ github.sha }} -c "file /usr/local/bin/cfspeedtest" | grep "x86-64"
+      - name: Verify arm64 image
+        if: matrix.platform == 'linux/arm64'
+        run: |
+          docker run --platform linux/arm64 cybuerg/cfspeedtest:${{ github.sha }} --help
+          docker run --platform linux/arm64 --entrypoint /bin/sh cybuerg/cfspeedtest:${{ github.sha }} -c "file /usr/local/bin/cfspeedtest" | grep "aarch64"
