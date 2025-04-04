@@ -15,8 +15,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Security audit
-        uses: actions-rs/audit-check@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install cargo audit
+        run: cargo install cargo-audit
+      - name: Run Cargo Audit
+        run: cargo audit
     continue-on-error: true
