@@ -46,6 +46,8 @@ Options:
           Test download speed only
       --upload-only
           Test upload speed only
+      --generate-completion <COMPLETION>
+          Generate shell completion script for the specified shell [possible values: bash, elvish, fish, powershell, zsh]
   -h, --help
           Print help
   -V, --version
