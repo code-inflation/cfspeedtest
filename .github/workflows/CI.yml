@@ -101,8 +101,14 @@ jobs:
         run: |
           docker run cybuerg/cfspeedtest:${{ github.sha }}-amd64 --help
           docker run --entrypoint /bin/sh cybuerg/cfspeedtest:${{ github.sha }}-amd64 -c "file /usr/local/bin/cfspeedtest" | grep "x86-64"
+      - name: Set up QEMU
+        if: matrix.platform == 'linux/arm64'
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+          
       - name: Verify arm64 image
         if: matrix.platform == 'linux/arm64'
         run: |
-          docker run cybuerg/cfspeedtest:${{ github.sha }}-arm64 --help
-          docker run --entrypoint /bin/sh cybuerg/cfspeedtest:${{ github.sha }}-arm64 -c "file /usr/local/bin/cfspeedtest" | grep "aarch64"
+          docker run --platform linux/arm64 cybuerg/cfspeedtest:${{ github.sha }}-arm64 --help
+          docker run --platform linux/arm64 --entrypoint /bin/sh cybuerg/cfspeedtest:${{ github.sha }}-arm64 -c "file /usr/local/bin/cfspeedtest" | grep "aarch64"
