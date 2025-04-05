@@ -27,13 +27,13 @@ fn main() {
         println!("Starting Cloudflare speed test");
     }
     let client;
-    if options.ipv4 {
+    if let Some(ref ip) = options.ipv4 {
         client = reqwest::blocking::Client::builder()
-            .local_address("0.0.0.0".parse::<IpAddr>().unwrap())
+            .local_address(ip.parse::<IpAddr>().expect("Invalid IPv4 address"))
             .build();
-    } else if options.ipv6 {
+    } else if let Some(ref ip) = options.ipv6 {
         client = reqwest::blocking::Client::builder()
-            .local_address("::".parse::<IpAddr>().unwrap())
+            .local_address(ip.parse::<IpAddr>().expect("Invalid IPv6 address"))
             .build();
     } else {
         client = reqwest::blocking::Client::builder().build();
