@@ -16,6 +16,7 @@ fn main() {
         nr_latency_tests: 20,
         max_payload_size: PayloadSize::M10,
         disable_dynamic_max_payload_size: false,
+        completion: None,
     };
 
     let measurements = speed_test(reqwest::blocking::Client::new(), options);
