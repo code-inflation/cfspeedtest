@@ -61,13 +61,13 @@ pub struct SpeedTestCLIOptions {
     #[arg(short, long)]
     pub verbose: bool,
 
-    /// Force usage of IPv4
-    #[arg(long)]
-    pub ipv4: bool,
+    /// Force IPv4 with provided source IPv4 address or the default IPv4 address bound to the main interface
+    #[clap(long, value_name = "IPv4", num_args = 0..=1, default_missing_value = "0.0.0.0", conflicts_with = "ipv6")]
+    pub ipv4: Option<String>,
 
-    /// Force usage of IPv6
-    #[arg(long)]
-    pub ipv6: bool,
+    /// Force IPv6 with provided source IPv6 address or the default IPv6 address bound to the main interface
+    #[clap(long, value_name = "IPv6", num_args = 0..=1, default_missing_value = "::", conflicts_with = "ipv4")]
+    pub ipv6: Option<String>,
 
     /// Disables dynamically skipping tests with larger payload sizes if the tests for the previous payload
     /// size took longer than 5 seconds
