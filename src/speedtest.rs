@@ -252,7 +252,14 @@ pub fn test_download(
     payload_size_bytes: usize,
     output_format: OutputFormat,
 ) -> f64 {
-    let url = &format!("{BASE_URL}/{DOWNLOAD_URL}{payload_size_bytes}");
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let url = &format!(
+        "{BASE_URL}/{DOWNLOAD_URL}{payload_size_bytes}&t={}",
+        timestamp
+    );
     let req_builder = client.get(url);
     let (status_code, mbits, duration) = {
         let response = req_builder.send().expect("failed to get response");
