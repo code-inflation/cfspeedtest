@@ -106,3 +106,129 @@ fn parse_payload_size(input_string: &str) -> Result<PayloadSize, String> {
 fn parse_output_format(input_string: &str) -> Result<OutputFormat, String> {
     OutputFormat::from(input_string.to_string())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_output_format_from_valid_inputs() {
+        assert_eq!(OutputFormat::from("csv".to_string()), Ok(OutputFormat::Csv));
+        assert_eq!(OutputFormat::from("CSV".to_string()), Ok(OutputFormat::Csv));
+        assert_eq!(
+            OutputFormat::from("json".to_string()),
+            Ok(OutputFormat::Json)
+        );
+        assert_eq!(
+            OutputFormat::from("JSON".to_string()),
+            Ok(OutputFormat::Json)
+        );
+        assert_eq!(
+            OutputFormat::from("json-pretty".to_string()),
+            Ok(OutputFormat::JsonPretty)
+        );
+        assert_eq!(
+            OutputFormat::from("json_pretty".to_string()),
+            Ok(OutputFormat::JsonPretty)
+        );
+        assert_eq!(
+            OutputFormat::from("JSON-PRETTY".to_string()),
+            Ok(OutputFormat::JsonPretty)
+        );
+        assert_eq!(
+            OutputFormat::from("stdout".to_string()),
+            Ok(OutputFormat::StdOut)
+        );
+        assert_eq!(
+            OutputFormat::from("STDOUT".to_string()),
+            Ok(OutputFormat::StdOut)
+        );
+    }
+
+    #[test]
+    fn test_output_format_from_invalid_inputs() {
+        assert!(OutputFormat::from("invalid".to_string()).is_err());
+        assert!(OutputFormat::from("xml".to_string()).is_err());
+        assert!(OutputFormat::from("".to_string()).is_err());
+        assert!(OutputFormat::from("json_invalid".to_string()).is_err());
+
+        let error_msg = OutputFormat::from("invalid".to_string()).unwrap_err();
+        assert_eq!(
+            error_msg,
+            "Value needs to be one of csv, json or json-pretty"
+        );
+    }
+
+    #[test]
+    fn test_output_format_display() {
+        assert_eq!(format!("{}", OutputFormat::Csv), "Csv");
+        assert_eq!(format!("{}", OutputFormat::Json), "Json");
+        assert_eq!(format!("{}", OutputFormat::JsonPretty), "JsonPretty");
+        assert_eq!(format!("{}", OutputFormat::StdOut), "StdOut");
+        assert_eq!(format!("{}", OutputFormat::None), "None");
+    }
+
+    #[test]
+    fn test_cli_options_should_download() {
+        let mut options = SpeedTestCLIOptions {
+            nr_tests: 10,
+            nr_latency_tests: 25,
+            max_payload_size: speedtest::PayloadSize::M25,
+            output_format: OutputFormat::StdOut,
+            verbose: false,
+            ipv4: None,
+            ipv6: None,
+            disable_dynamic_max_payload_size: false,
+            download_only: false,
+            upload_only: false,
+            completion: None,
+        };
+
+        // Default: both download and upload
+        assert!(options.should_download());
+        assert!(options.should_upload());
+
+        // Download only
+        options.download_only = true;
+        assert!(options.should_download());
+        assert!(!options.should_upload());
+
+        // Upload only
+        options.download_only = false;
+        options.upload_only = true;
+        assert!(!options.should_download());
+        assert!(options.should_upload());
+    }
+
+    #[test]
+    fn test_cli_options_should_upload() {
+        let mut options = SpeedTestCLIOptions {
+            nr_tests: 10,
+            nr_latency_tests: 25,
+            max_payload_size: speedtest::PayloadSize::M25,
+            output_format: OutputFormat::StdOut,
+            verbose: false,
+            ipv4: None,
+            ipv6: None,
+            disable_dynamic_max_payload_size: false,
+            download_only: false,
+            upload_only: false,
+            completion: None,
+        };
+
+        // Default: both download and upload
+        assert!(options.should_upload());
+        assert!(options.should_download());
+
+        // Upload only
+        options.upload_only = true;
+        assert!(options.should_upload());
+        assert!(!options.should_download());
+
+        // Download only
+        options.upload_only = false;
+        options.download_only = true;
+        assert!(!options.should_upload());
+        assert!(options.should_download());
+    }
+}

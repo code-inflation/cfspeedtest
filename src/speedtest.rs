@@ -23,7 +23,7 @@ pub enum TestType {
     Upload,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PayloadSize {
     K100 = 100_000,
     M1 = 1_000_000,
@@ -311,4 +311,151 @@ fn extract_header_value(
         .and_then(|value| value.to_str().ok())
         .unwrap_or(na_value)
         .to_owned()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_payload_size_from_valid_inputs() {
+        // Test 100K variants
+        assert_eq!(PayloadSize::from("100k".to_string()), Ok(PayloadSize::K100));
+        assert_eq!(PayloadSize::from("100K".to_string()), Ok(PayloadSize::K100));
+        assert_eq!(
+            PayloadSize::from("100kb".to_string()),
+            Ok(PayloadSize::K100)
+        );
+        assert_eq!(
+            PayloadSize::from("100KB".to_string()),
+            Ok(PayloadSize::K100)
+        );
+        assert_eq!(
+            PayloadSize::from("100000".to_string()),
+            Ok(PayloadSize::K100)
+        );
+        assert_eq!(
+            PayloadSize::from("100_000".to_string()),
+            Ok(PayloadSize::K100)
+        );
+
+        // Test 1M variants
+        assert_eq!(PayloadSize::from("1m".to_string()), Ok(PayloadSize::M1));
+        assert_eq!(PayloadSize::from("1M".to_string()), Ok(PayloadSize::M1));
+        assert_eq!(PayloadSize::from("1mb".to_string()), Ok(PayloadSize::M1));
+        assert_eq!(PayloadSize::from("1MB".to_string()), Ok(PayloadSize::M1));
+        assert_eq!(
+            PayloadSize::from("1000000".to_string()),
+            Ok(PayloadSize::M1)
+        );
+        assert_eq!(
+            PayloadSize::from("1_000_000".to_string()),
+            Ok(PayloadSize::M1)
+        );
+
+        // Test 10M variants
+        assert_eq!(PayloadSize::from("10m".to_string()), Ok(PayloadSize::M10));
+        assert_eq!(PayloadSize::from("10M".to_string()), Ok(PayloadSize::M10));
+        assert_eq!(PayloadSize::from("10mb".to_string()), Ok(PayloadSize::M10));
+        assert_eq!(PayloadSize::from("10MB".to_string()), Ok(PayloadSize::M10));
+        assert_eq!(
+            PayloadSize::from("10000000".to_string()),
+            Ok(PayloadSize::M10)
+        );
+        assert_eq!(
+            PayloadSize::from("10_000_000".to_string()),
+            Ok(PayloadSize::M10)
+        );
+
+        // Test 25M variants
+        assert_eq!(PayloadSize::from("25m".to_string()), Ok(PayloadSize::M25));
+        assert_eq!(PayloadSize::from("25M".to_string()), Ok(PayloadSize::M25));
+        assert_eq!(PayloadSize::from("25mb".to_string()), Ok(PayloadSize::M25));
+        assert_eq!(PayloadSize::from("25MB".to_string()), Ok(PayloadSize::M25));
+        assert_eq!(
+            PayloadSize::from("25000000".to_string()),
+            Ok(PayloadSize::M25)
+        );
+        assert_eq!(
+            PayloadSize::from("25_000_000".to_string()),
+            Ok(PayloadSize::M25)
+        );
+
+        // Test 100M variants
+        assert_eq!(PayloadSize::from("100m".to_string()), Ok(PayloadSize::M100));
+        assert_eq!(PayloadSize::from("100M".to_string()), Ok(PayloadSize::M100));
+        assert_eq!(
+            PayloadSize::from("100mb".to_string()),
+            Ok(PayloadSize::M100)
+        );
+        assert_eq!(
+            PayloadSize::from("100MB".to_string()),
+            Ok(PayloadSize::M100)
+        );
+        assert_eq!(
+            PayloadSize::from("100000000".to_string()),
+            Ok(PayloadSize::M100)
+        );
+        assert_eq!(
+            PayloadSize::from("100_000_000".to_string()),
+            Ok(PayloadSize::M100)
+        );
+    }
+
+    #[test]
+    fn test_payload_size_from_invalid_inputs() {
+        assert!(PayloadSize::from("invalid".to_string()).is_err());
+        assert!(PayloadSize::from("50m".to_string()).is_err());
+        assert!(PayloadSize::from("200k".to_string()).is_err());
+        assert!(PayloadSize::from("".to_string()).is_err());
+        assert!(PayloadSize::from("1g".to_string()).is_err());
+
+        let error_msg = PayloadSize::from("invalid".to_string()).unwrap_err();
+        assert_eq!(
+            error_msg,
+            "Value needs to be one of 100k, 1m, 10m, 25m or 100m"
+        );
+    }
+
+    #[test]
+    fn test_payload_size_values() {
+        assert_eq!(PayloadSize::K100 as usize, 100_000);
+        assert_eq!(PayloadSize::M1 as usize, 1_000_000);
+        assert_eq!(PayloadSize::M10 as usize, 10_000_000);
+        assert_eq!(PayloadSize::M25 as usize, 25_000_000);
+        assert_eq!(PayloadSize::M100 as usize, 100_000_000);
+    }
+
+    #[test]
+    fn test_payload_size_sizes_from_max() {
+        assert_eq!(
+            PayloadSize::sizes_from_max(PayloadSize::K100),
+            vec![100_000]
+        );
+        assert_eq!(
+            PayloadSize::sizes_from_max(PayloadSize::M1),
+            vec![100_000, 1_000_000]
+        );
+        assert_eq!(
+            PayloadSize::sizes_from_max(PayloadSize::M10),
+            vec![100_000, 1_000_000, 10_000_000]
+        );
+        assert_eq!(
+            PayloadSize::sizes_from_max(PayloadSize::M25),
+            vec![100_000, 1_000_000, 10_000_000, 25_000_000]
+        );
+        assert_eq!(
+            PayloadSize::sizes_from_max(PayloadSize::M100),
+            vec![100_000, 1_000_000, 10_000_000, 25_000_000, 100_000_000]
+        );
+    }
+
+    #[test]
+    fn test_payload_size_display() {
+        // The Display implementation uses format_bytes from measurements module
+        // We'll test the basic functionality
+        let size = PayloadSize::K100;
+        let display_str = format!("{}", size);
+        assert!(!display_str.is_empty());
+    }
 }
