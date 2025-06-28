@@ -219,3 +219,90 @@ pub(crate) fn format_bytes(bytes: usize) -> String {
         _ => format!("{bytes} bytes"),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_format_bytes() {
+        assert_eq!(format_bytes(500), "500 bytes");
+        assert_eq!(format_bytes(1_000), "1KB");
+        assert_eq!(format_bytes(100_000), "100KB");
+        assert_eq!(format_bytes(999_999), "999KB");
+        assert_eq!(format_bytes(1_000_000), "1MB");
+        assert_eq!(format_bytes(25_000_000), "25MB");
+        assert_eq!(format_bytes(100_000_000), "100MB");
+        assert_eq!(format_bytes(999_999_999), "999MB");
+        assert_eq!(format_bytes(1_000_000_000), "1000000000 bytes");
+    }
+
+    #[test]
+    fn test_measurement_display() {
+        let measurement = Measurement {
+            test_type: TestType::Download,
+            payload_size: 1_000_000,
+            mbit: 50.5,
+        };
+
+        let display_str = format!("{}", measurement);
+        assert!(display_str.contains("Download"));
+        assert!(display_str.contains("1MB"));
+        assert!(display_str.contains("50.5"));
+    }
+
+    #[test]
+    fn test_calc_stats_empty() {
+        assert_eq!(calc_stats(vec![]), None);
+    }
+
+    #[test]
+    fn test_calc_stats_single_value() {
+        let result = calc_stats(vec![10.0]).unwrap();
+        assert_eq!(result, (10.0, 10.0, 10.0, 10.0, 10.0, 10.0));
+    }
+
+    #[test]
+    fn test_calc_stats_two_values() {
+        let result = calc_stats(vec![10.0, 20.0]).unwrap();
+        assert_eq!(result.0, 10.0); // min
+        assert_eq!(result.4, 20.0); // max
+        assert_eq!(result.2, 15.0); // median
+        assert_eq!(result.5, 15.0); // avg
+    }
+
+    #[test]
+    fn test_calc_stats_multiple_values() {
+        let result = calc_stats(vec![1.0, 2.0, 3.0, 4.0, 5.0]).unwrap();
+        assert_eq!(result.0, 1.0); // min
+        assert_eq!(result.4, 5.0); // max
+        assert_eq!(result.2, 3.0); // median
+        assert_eq!(result.5, 3.0); // avg
+    }
+
+    #[test]
+    fn test_calc_stats_unsorted() {
+        let result = calc_stats(vec![5.0, 1.0, 3.0, 2.0, 4.0]).unwrap();
+        assert_eq!(result.0, 1.0); // min
+        assert_eq!(result.4, 5.0); // max
+        assert_eq!(result.2, 3.0); // median
+        assert_eq!(result.5, 3.0); // avg
+    }
+
+    #[test]
+    fn test_median_odd_length() {
+        assert_eq!(median(&[1.0, 2.0, 3.0]), 2.0);
+        assert_eq!(median(&[1.0, 2.0, 3.0, 4.0, 5.0]), 3.0);
+    }
+
+    #[test]
+    fn test_median_even_length() {
+        assert_eq!(median(&[1.0, 2.0]), 1.5);
+        assert_eq!(median(&[1.0, 2.0, 3.0, 4.0]), 2.5);
+    }
+
+    #[test]
+    fn test_median_single_value() {
+        assert_eq!(median(&[5.0]), 5.0);
+    }
+}
