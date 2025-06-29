@@ -80,18 +80,30 @@ pub(crate) fn log_measurements(
         }
         OutputFormat::Json => {
             let mut output = serde_json::Map::new();
-            output.insert("speed_measurements".to_string(), serde_json::to_value(&stat_measurements).unwrap());
+            output.insert(
+                "speed_measurements".to_string(),
+                serde_json::to_value(&stat_measurements).unwrap(),
+            );
             if let Some(latency) = latency_measurement {
-                output.insert("latency_measurement".to_string(), serde_json::to_value(latency).unwrap());
+                output.insert(
+                    "latency_measurement".to_string(),
+                    serde_json::to_value(latency).unwrap(),
+                );
             }
             serde_json::to_writer(io::stdout(), &output).unwrap();
             println!();
         }
         OutputFormat::JsonPretty => {
             let mut output = serde_json::Map::new();
-            output.insert("speed_measurements".to_string(), serde_json::to_value(&stat_measurements).unwrap());
+            output.insert(
+                "speed_measurements".to_string(),
+                serde_json::to_value(&stat_measurements).unwrap(),
+            );
             if let Some(latency) = latency_measurement {
-                output.insert("latency_measurement".to_string(), serde_json::to_value(latency).unwrap());
+                output.insert(
+                    "latency_measurement".to_string(),
+                    serde_json::to_value(latency).unwrap(),
+                );
             }
             serde_json::to_writer_pretty(io::stdout(), &output).unwrap();
             println!();

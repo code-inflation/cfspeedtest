@@ -1,7 +1,7 @@
 use crate::measurements::format_bytes;
 use crate::measurements::log_measurements;
-use crate::measurements::Measurement;
 use crate::measurements::LatencyMeasurement;
+use crate::measurements::Measurement;
 use crate::progress::print_progress;
 use crate::OutputFormat;
 use crate::SpeedTestCLIOptions;
@@ -94,18 +94,25 @@ pub fn speed_test(client: Client, options: SpeedTestCLIOptions) -> Vec<Measureme
     if options.output_format == OutputFormat::StdOut {
         println!("{metadata}");
     }
-    let (latency_measurements, avg_latency) = run_latency_test(&client, options.nr_latency_tests, options.output_format);
+    let (latency_measurements, avg_latency) =
+        run_latency_test(&client, options.nr_latency_tests, options.output_format);
     let latency_measurement = if !latency_measurements.is_empty() {
         Some(LatencyMeasurement {
             avg_latency_ms: avg_latency,
-            min_latency_ms: latency_measurements.iter().copied().fold(f64::INFINITY, f64::min),
-            max_latency_ms: latency_measurements.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+            min_latency_ms: latency_measurements
+                .iter()
+                .copied()
+                .fold(f64::INFINITY, f64::min),
+            max_latency_ms: latency_measurements
+                .iter()
+                .copied()
+                .fold(f64::NEG_INFINITY, f64::max),
             latency_measurements,
         })
     } else {
         None
     };
-    
+
     let payload_sizes = PayloadSize::sizes_from_max(options.max_payload_size.clone());
     let mut measurements = Vec::new();
 
