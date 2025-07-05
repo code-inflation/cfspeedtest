@@ -84,7 +84,13 @@ impl Display for Metadata {
 }
 
 pub fn speed_test(client: Client, options: SpeedTestCLIOptions) -> Vec<Measurement> {
-    let metadata = fetch_metadata(&client);
+    let metadata = match fetch_metadata(&client) {
+        Ok(metadata) => metadata,
+        Err(e) => {
+            eprintln!("Error fetching metadata: {}", e);
+            std::process::exit(1);
+        }
+    };
     if options.output_format == OutputFormat::StdOut {
         println!("{metadata}");
     }
@@ -304,21 +310,16 @@ fn print_current_speed(
     );
 }
 
-pub fn fetch_metadata(client: &Client) -> Metadata {
+pub fn fetch_metadata(client: &Client) -> Result<Metadata, reqwest::Error> {
     let url = &format!("{}/{}{}", BASE_URL, DOWNLOAD_URL, 0);
-    let headers = client
-        .get(url)
-        .send()
-        .expect("failed to get response")
-        .headers()
-        .to_owned();
-    Metadata {
+    let headers = client.get(url).send()?.headers().to_owned();
+    Ok(Metadata {
         city: extract_header_value(&headers, "cf-meta-city", "City N/A"),
         country: extract_header_value(&headers, "cf-meta-country", "Country N/A"),
         ip: extract_header_value(&headers, "cf-meta-ip", "IP N/A"),
         asn: extract_header_value(&headers, "cf-meta-asn", "ASN N/A"),
         colo: extract_header_value(&headers, "cf-meta-colo", "Colo N/A"),
-    }
+    })
 }
 
 fn extract_header_value(
@@ -472,10 +473,22 @@ mod tests {
 
     #[test]
     fn test_payload_size_display() {
-        // The Display implementation uses format_bytes from measurements module
-        // We'll test the basic functionality
         let size = PayloadSize::K100;
         let display_str = format!("{}", size);
         assert!(!display_str.is_empty());
+    }
+
+    #[test]
+    fn test_fetch_metadata_ipv6_timeout_error() {
+        use std::time::Duration;
+
+        let client = reqwest::blocking::Client::builder()
+            .local_address("::".parse::<std::net::IpAddr>().unwrap())
+            .timeout(Duration::from_millis(100))
+            .build()
+            .unwrap();
+
+        let result = fetch_metadata(&client);
+        assert!(result.is_err());
     }
 }
