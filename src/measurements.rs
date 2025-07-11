@@ -135,7 +135,7 @@ fn log_measurements_by_test_type(
             let (min, q1, median, q3, max, avg) = calc_stats(type_measurements).unwrap();
 
             let formatted_payload = format_bytes(payload_size);
-            let fmt_test_type = format!("{:?}", test_type);
+            let fmt_test_type = format!("{test_type:?}");
             stat_measurements.push(StatMeasurement {
                 test_type,
                 payload_size,
@@ -257,7 +257,7 @@ mod tests {
             mbit: 50.5,
         };
 
-        let display_str = format!("{}", measurement);
+        let display_str = format!("{measurement}");
         assert!(display_str.contains("Download"));
         assert!(display_str.contains("1MB"));
         assert!(display_str.contains("50.5"));

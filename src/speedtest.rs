@@ -87,7 +87,7 @@ pub fn speed_test(client: Client, options: SpeedTestCLIOptions) -> Vec<Measureme
     let metadata = match fetch_metadata(&client) {
         Ok(metadata) => metadata,
         Err(e) => {
-            eprintln!("Error fetching metadata: {}", e);
+            eprintln!("Error fetching metadata: {e}");
             std::process::exit(1);
         }
     };
@@ -474,7 +474,7 @@ mod tests {
     #[test]
     fn test_payload_size_display() {
         let size = PayloadSize::K100;
-        let display_str = format!("{}", size);
+        let display_str = format!("{size}");
         assert!(!display_str.is_empty());
     }
 
