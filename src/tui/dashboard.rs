@@ -2,8 +2,7 @@ use crate::tui::app::{DashboardState, TestPhase};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style},
-    text::{Line, Span},
-    widgets::{Block, Borders, Gauge, Paragraph},
+    widgets::{Block, Borders, Paragraph},
     Frame,
 };
 
@@ -12,14 +11,14 @@ pub fn render_dashboard(f: &mut Frame, state: &DashboardState) {
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(3), // Title
-            Constraint::Length(3), // Progress bars
+            Constraint::Length(4), // Progress bars + Latency stats
             Constraint::Min(10),   // Main content
             Constraint::Length(3), // Status
         ])
         .split(f.area());
 
     render_title(f, chunks[0], state);
-    render_progress_bars(f, chunks[1], state);
+    render_progress_and_latency(f, chunks[1], state);
     render_main_content(f, chunks[2], state);
     render_status(f, chunks[3], state);
 }
@@ -40,48 +39,55 @@ fn render_title(f: &mut Frame, area: Rect, state: &DashboardState) {
     f.render_widget(title, area);
 }
 
-fn render_progress_bars(f: &mut Frame, area: Rect, state: &DashboardState) {
+fn render_progress_and_latency(f: &mut Frame, area: Rect, state: &DashboardState) {
     let chunks = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1), // Download status
+            Constraint::Length(1), // Upload status
+            Constraint::Length(1), // Latency stats
+        ])
         .split(area);
 
-    let download_progress = match state.progress.phase {
-        TestPhase::Download => {
-            if state.progress.total_iterations > 0 {
-                state.progress.current_iteration as f64 / state.progress.total_iterations as f64
-            } else {
-                0.0
-            }
-        }
-        TestPhase::Upload | TestPhase::Completed => 1.0,
-        _ => 0.0,
+    // Download status
+    let download_color = match state.progress.phase {
+        TestPhase::Download => Color::Green,
+        TestPhase::Completed => Color::Green,
+        _ if state.progress.download_status.contains("Completed") => Color::Green,
+        _ => Color::Gray,
     };
 
-    let upload_progress = match state.progress.phase {
-        TestPhase::Upload => {
-            if state.progress.total_iterations > 0 {
-                state.progress.current_iteration as f64 / state.progress.total_iterations as f64
-            } else {
-                0.0
-            }
-        }
-        TestPhase::Completed => 1.0,
-        _ => 0.0,
+    let download_text = format!("Download: {}", state.progress.download_status);
+    let download_paragraph =
+        Paragraph::new(download_text).style(Style::default().fg(download_color));
+    f.render_widget(download_paragraph, chunks[0]);
+
+    // Upload status
+    let upload_color = match state.progress.phase {
+        TestPhase::Upload => Color::Blue,
+        TestPhase::Completed => Color::Blue,
+        _ if state.progress.upload_status.contains("Completed") => Color::Blue,
+        _ => Color::Gray,
     };
 
-    let download_gauge = Gauge::default()
-        .block(Block::default().title("Download").borders(Borders::ALL))
-        .gauge_style(Style::default().fg(Color::Green))
-        .ratio(download_progress.min(1.0));
+    let upload_text = format!("Upload:   {}", state.progress.upload_status);
+    let upload_paragraph = Paragraph::new(upload_text).style(Style::default().fg(upload_color));
+    f.render_widget(upload_paragraph, chunks[1]);
 
-    let upload_gauge = Gauge::default()
-        .block(Block::default().title("Upload").borders(Borders::ALL))
-        .gauge_style(Style::default().fg(Color::Blue))
-        .ratio(upload_progress.min(1.0));
-
-    f.render_widget(download_gauge, chunks[0]);
-    f.render_widget(upload_gauge, chunks[1]);
+    // Latency stats in a compact single line
+    let latency_text = format!(
+        "Latency:  Current: {:.1}ms | Average: {:.1}ms | Min/Max: {:.1}ms / {:.1}ms",
+        state.current_latency,
+        state.avg_latency,
+        if state.min_latency == f64::MAX {
+            0.0
+        } else {
+            state.min_latency
+        },
+        state.max_latency
+    );
+    let latency_paragraph = Paragraph::new(latency_text).style(Style::default().fg(Color::Yellow));
+    f.render_widget(latency_paragraph, chunks[2]);
 }
 
 fn render_main_content(f: &mut Frame, area: Rect, state: &DashboardState) {
@@ -91,7 +97,7 @@ fn render_main_content(f: &mut Frame, area: Rect, state: &DashboardState) {
         .split(area);
 
     render_speed_graphs(f, chunks[0], state);
-    render_stats_and_boxplots(f, chunks[1], state);
+    render_boxplots(f, chunks[1], state);
 }
 
 fn render_speed_graphs(f: &mut Frame, area: Rect, state: &DashboardState) {
@@ -146,70 +152,9 @@ fn render_upload_graph(f: &mut Frame, area: Rect, state: &DashboardState) {
     }
 }
 
-fn render_stats_and_boxplots(f: &mut Frame, area: Rect, state: &DashboardState) {
-    let chunks = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-        .split(area);
-
-    render_latency_stats(f, chunks[0], state);
-    render_boxplots(f, chunks[1], state);
-}
-
-fn render_latency_stats(f: &mut Frame, area: Rect, state: &DashboardState) {
-    let stats_text = vec![
-        Line::from(vec![
-            Span::raw("Current: "),
-            Span::styled(
-                format!("{:.1}ms", state.current_latency),
-                Style::default().fg(Color::Yellow),
-            ),
-        ]),
-        Line::from(vec![
-            Span::raw("Average: "),
-            Span::styled(
-                format!("{:.1}ms", state.avg_latency),
-                Style::default().fg(Color::Green),
-            ),
-        ]),
-        Line::from(vec![
-            Span::raw("Min/Max: "),
-            Span::styled(
-                format!(
-                    "{:.1}ms / {:.1}ms",
-                    if state.min_latency == f64::MAX {
-                        0.0
-                    } else {
-                        state.min_latency
-                    },
-                    state.max_latency
-                ),
-                Style::default().fg(Color::Cyan),
-            ),
-        ]),
-    ];
-
-    let paragraph = Paragraph::new(stats_text).block(
-        Block::default()
-            .title("Latency Stats")
-            .borders(Borders::ALL),
-    );
-    f.render_widget(paragraph, area);
-}
-
-fn render_boxplots(f: &mut Frame, area: Rect, _state: &DashboardState) {
-    let boxplot_text = vec![
-        Line::from("Download: |----[===:===]----|"),
-        Line::from("Upload:   |--[=====:=====]--|"),
-        Line::from("Latency:  |-----[=:=]-------|"),
-    ];
-
-    let paragraph = Paragraph::new(boxplot_text).block(
-        Block::default()
-            .title("Measurement Boxplots")
-            .borders(Borders::ALL),
-    );
-    f.render_widget(paragraph, area);
+fn render_boxplots(f: &mut Frame, area: Rect, state: &DashboardState) {
+    let boxplot_grid = crate::tui::widgets::BoxplotGrid::new(&state.measurements);
+    f.render_widget(boxplot_grid, area);
 }
 
 fn render_status(f: &mut Frame, area: Rect, state: &DashboardState) {

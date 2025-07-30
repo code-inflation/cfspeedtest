@@ -131,7 +131,7 @@ fn log_measurements_by_test_type(
     stat_measurements
 }
 
-fn calc_stats(mbit_measurements: Vec<f64>) -> Option<(f64, f64, f64, f64, f64, f64)> {
+pub fn calc_stats(mbit_measurements: Vec<f64>) -> Option<(f64, f64, f64, f64, f64, f64)> {
     log::debug!("calc_stats for mbit_measurements {mbit_measurements:?}");
     let length = mbit_measurements.len();
     if length == 0 {

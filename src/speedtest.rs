@@ -17,7 +17,7 @@ const BASE_URL: &str = "https://speed.cloudflare.com";
 const DOWNLOAD_URL: &str = "__down?bytes=";
 const UPLOAD_URL: &str = "__up";
 
-#[derive(Clone, Copy, Debug, Hash, Serialize, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Hash, Serialize, Eq, PartialEq, Ord, PartialOrd)]
 pub enum TestType {
     Download,
     Upload,

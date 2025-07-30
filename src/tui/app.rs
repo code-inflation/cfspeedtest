@@ -1,13 +1,12 @@
 use crate::measurements::Measurement;
-use crate::speedtest::{TestType, Metadata};
+use crate::speedtest::{Metadata, TestType};
 use crossbeam_channel::Receiver;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style},
-    text::{Line, Span},
-    widgets::{Block, Borders, Gauge, Paragraph},
+    widgets::{Block, Borders, Paragraph},
     Frame, Terminal,
 };
 use std::collections::VecDeque;
@@ -34,6 +33,11 @@ pub enum TestEvent {
     LatencyMeasurement(LatencyData),
     TestStarted(TestType, usize),
     TestCompleted(TestType, usize),
+    TestPhaseStarted(TestType, u32, Vec<usize>), // test_type, nr_tests, payload_sizes
+    PayloadSizeStarted(TestType, usize, usize),  // test_type, payload_size, payload_index
+    PayloadSizeCompleted(TestType, usize),
+    TestPhaseCompleted(TestType, f64), // test_type, average_speed
+    TestsSkipped(TestType, String),    // test_type, reason
     AllTestsCompleted,
     MetadataReceived(Metadata),
     Error(String),
@@ -46,6 +50,20 @@ pub struct TestProgress {
     pub current_iteration: u32,
     pub total_iterations: u32,
     pub phase: TestPhase,
+    pub download_completed_tests: u32,
+    pub download_total_tests: u32,
+    pub upload_completed_tests: u32,
+    pub upload_total_tests: u32,
+    pub current_payload_index: usize,
+    pub total_payload_sizes: usize,
+    pub download_status: String,
+    pub upload_status: String,
+    pub download_current_speed: f64,
+    pub upload_current_speed: f64,
+    pub download_average_speed: f64,
+    pub upload_average_speed: f64,
+    pub download_completed_payload_sizes: usize,
+    pub upload_completed_payload_sizes: usize,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -86,6 +104,20 @@ impl Default for DashboardState {
                 current_iteration: 0,
                 total_iterations: 0,
                 phase: TestPhase::Idle,
+                download_completed_tests: 0,
+                download_total_tests: 0,
+                upload_completed_tests: 0,
+                upload_total_tests: 0,
+                current_payload_index: 0,
+                total_payload_sizes: 0,
+                download_status: "Waiting...".to_string(),
+                upload_status: "Waiting...".to_string(),
+                download_current_speed: 0.0,
+                upload_current_speed: 0.0,
+                download_average_speed: 0.0,
+                upload_average_speed: 0.0,
+                download_completed_payload_sizes: 0,
+                upload_completed_payload_sizes: 0,
             },
             current_download_speed: 0.0,
             current_upload_speed: 0.0,
@@ -108,16 +140,42 @@ impl DashboardState {
                 match data.test_type {
                     TestType::Download => {
                         self.current_download_speed = data.speed;
+                        self.progress.download_current_speed = data.speed;
                         self.download_speeds.push_back(data.clone());
                         if self.download_speeds.len() > self.max_data_points {
                             self.download_speeds.pop_front();
                         }
+
+                        // Update status message
+                        if let Some(payload_size) = self.progress.current_payload_size {
+                            let payload_mb = payload_size / 1_000_000;
+                            self.progress.download_status = format!(
+                                "Testing {}MB [{}/{}] - Current: {:.1} Mbps",
+                                payload_mb,
+                                self.progress.current_iteration + 1,
+                                self.progress.total_iterations,
+                                data.speed
+                            );
+                        }
                     }
                     TestType::Upload => {
                         self.current_upload_speed = data.speed;
+                        self.progress.upload_current_speed = data.speed;
                         self.upload_speeds.push_back(data.clone());
                         if self.upload_speeds.len() > self.max_data_points {
                             self.upload_speeds.pop_front();
+                        }
+
+                        // Update status message
+                        if let Some(payload_size) = self.progress.current_payload_size {
+                            let payload_mb = payload_size / 1_000_000;
+                            self.progress.upload_status = format!(
+                                "Testing {}MB [{}/{}] - Current: {:.1} Mbps",
+                                payload_mb,
+                                self.progress.current_iteration + 1,
+                                self.progress.total_iterations,
+                                data.speed
+                            );
                         }
                     }
                 }
@@ -153,9 +211,88 @@ impl DashboardState {
                     TestType::Upload => TestPhase::Upload,
                 };
             }
-            TestEvent::TestCompleted(_, _) => {
+            TestEvent::TestCompleted(test_type, _) => {
                 self.progress.current_iteration += 1;
+                match test_type {
+                    TestType::Download => {
+                        self.progress.download_completed_tests += 1;
+                    }
+                    TestType::Upload => {
+                        self.progress.upload_completed_tests += 1;
+                    }
+                }
             }
+            TestEvent::TestPhaseStarted(test_type, nr_tests, payload_sizes) => {
+                self.progress.phase = match test_type {
+                    TestType::Download => TestPhase::Download,
+                    TestType::Upload => TestPhase::Upload,
+                };
+                self.progress.total_payload_sizes = payload_sizes.len();
+                let total_tests = nr_tests * payload_sizes.len() as u32;
+                match test_type {
+                    TestType::Download => {
+                        self.progress.download_total_tests = total_tests;
+                        self.progress.download_completed_tests = 0;
+                        self.progress.download_completed_payload_sizes = 0;
+                        self.progress.download_status = "Starting...".to_string();
+                    }
+                    TestType::Upload => {
+                        self.progress.upload_total_tests = total_tests;
+                        self.progress.upload_completed_tests = 0;
+                        self.progress.upload_completed_payload_sizes = 0;
+                        self.progress.upload_status = "Starting...".to_string();
+                    }
+                }
+            }
+            TestEvent::PayloadSizeStarted(test_type, payload_size, payload_index) => {
+                self.progress.current_test = Some(test_type);
+                self.progress.current_payload_size = Some(payload_size);
+                self.progress.current_payload_index = payload_index;
+                self.progress.current_iteration = 0;
+                // Calculate total iterations for this payload size
+                let total_tests_for_phase = match test_type {
+                    TestType::Download => self.progress.download_total_tests,
+                    TestType::Upload => self.progress.upload_total_tests,
+                };
+                self.progress.total_iterations =
+                    total_tests_for_phase / self.progress.total_payload_sizes as u32;
+            }
+            TestEvent::PayloadSizeCompleted(test_type, _) => {
+                // Payload size completed, reset current iteration
+                self.progress.current_iteration = 0;
+                match test_type {
+                    TestType::Download => {
+                        self.progress.download_completed_payload_sizes += 1;
+                    }
+                    TestType::Upload => {
+                        self.progress.upload_completed_payload_sizes += 1;
+                    }
+                }
+            }
+            TestEvent::TestPhaseCompleted(test_type, average_speed) => match test_type {
+                TestType::Download => {
+                    self.progress.download_average_speed = average_speed;
+                    self.progress.download_status = format!(
+                        "Completed - Average: {:.1} Mbps ({} payload sizes tested)",
+                        average_speed, self.progress.download_completed_payload_sizes
+                    );
+                }
+                TestType::Upload => {
+                    self.progress.upload_average_speed = average_speed;
+                    self.progress.upload_status = format!(
+                        "Completed - Average: {:.1} Mbps ({} payload sizes tested)",
+                        average_speed, self.progress.upload_completed_payload_sizes
+                    );
+                }
+            },
+            TestEvent::TestsSkipped(test_type, reason) => match test_type {
+                TestType::Download => {
+                    self.progress.download_status = format!("Skipped ({})", reason);
+                }
+                TestType::Upload => {
+                    self.progress.upload_status = format!("Skipped ({})", reason);
+                }
+            },
             TestEvent::AllTestsCompleted => {
                 self.progress.phase = TestPhase::Completed;
                 self.progress.current_test = None;
@@ -232,14 +369,14 @@ impl App {
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Length(3), // Title
-                Constraint::Length(3), // Progress bars
+                Constraint::Length(4), // Progress bars + Latency stats
                 Constraint::Min(10),   // Main content
                 Constraint::Length(3), // Status
             ])
             .split(f.area());
 
         self.draw_title(f, chunks[0]);
-        self.draw_progress_bars(f, chunks[1]);
+        self.draw_progress_and_latency(f, chunks[1]);
         self.draw_main_content(f, chunks[2]);
         self.draw_status(f, chunks[3]);
     }
@@ -260,47 +397,118 @@ impl App {
         f.render_widget(title, area);
     }
 
-    fn draw_progress_bars(&self, f: &mut Frame, area: Rect) {
+    fn draw_progress_and_latency(&self, f: &mut Frame, area: Rect) {
         let chunks = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(1), // Download status
+                Constraint::Length(1), // Upload status
+                Constraint::Length(1), // Latency stats
+            ])
             .split(area);
 
-        let download_progress = if self.state.progress.phase == TestPhase::Download {
-            (self.state.progress.current_iteration as f64
-                / self.state.progress.total_iterations as f64)
-                .min(1.0)
-        } else if matches!(
-            self.state.progress.phase,
-            TestPhase::Upload | TestPhase::Completed
-        ) {
-            1.0
-        } else {
-            0.0
+        // Calculate adaptive progress for visual bars
+        let download_progress = self.calculate_adaptive_progress(TestType::Download);
+        let upload_progress = self.calculate_adaptive_progress(TestType::Upload);
+
+        // Download status with progress bar and text
+        let download_color = match self.state.progress.phase {
+            TestPhase::Download => Color::Green,
+            TestPhase::Completed if download_progress >= 1.0 => Color::Green,
+            _ if download_progress >= 1.0 => Color::Green,
+            _ => Color::Gray,
         };
 
-        let upload_progress = if self.state.progress.phase == TestPhase::Upload {
-            (self.state.progress.current_iteration as f64
-                / self.state.progress.total_iterations as f64)
-                .min(1.0)
-        } else if self.state.progress.phase == TestPhase::Completed {
-            1.0
-        } else {
-            0.0
+        let download_text = format!("Download: {}", self.state.progress.download_status);
+        let download_paragraph =
+            Paragraph::new(download_text).style(Style::default().fg(download_color));
+        f.render_widget(download_paragraph, chunks[0]);
+
+        // Upload status with progress bar and text
+        let upload_color = match self.state.progress.phase {
+            TestPhase::Upload => Color::Blue,
+            TestPhase::Completed if upload_progress >= 1.0 => Color::Blue,
+            _ if upload_progress >= 1.0 => Color::Blue,
+            _ => Color::Gray,
         };
 
-        let download_gauge = Gauge::default()
-            .block(Block::default().title("Download").borders(Borders::ALL))
-            .gauge_style(Style::default().fg(Color::Green))
-            .ratio(download_progress);
+        let upload_text = format!("Upload:   {}", self.state.progress.upload_status);
+        let upload_paragraph = Paragraph::new(upload_text).style(Style::default().fg(upload_color));
+        f.render_widget(upload_paragraph, chunks[1]);
 
-        let upload_gauge = Gauge::default()
-            .block(Block::default().title("Upload").borders(Borders::ALL))
-            .gauge_style(Style::default().fg(Color::Blue))
-            .ratio(upload_progress);
+        // Latency stats in a compact single line
+        let latency_text = format!(
+            "Latency:  Current: {:.1}ms | Average: {:.1}ms | Min/Max: {:.1}ms / {:.1}ms",
+            self.state.current_latency,
+            self.state.avg_latency,
+            if self.state.min_latency == f64::MAX {
+                0.0
+            } else {
+                self.state.min_latency
+            },
+            self.state.max_latency
+        );
+        let latency_paragraph =
+            Paragraph::new(latency_text).style(Style::default().fg(Color::Yellow));
+        f.render_widget(latency_paragraph, chunks[2]);
+    }
 
-        f.render_widget(download_gauge, chunks[0]);
-        f.render_widget(upload_gauge, chunks[1]);
+    fn calculate_adaptive_progress(&self, test_type: TestType) -> f64 {
+        match test_type {
+            TestType::Download => {
+                if self.state.progress.download_total_tests > 0 {
+                    let completed = self.state.progress.download_completed_tests as f64;
+                    let total = self.state.progress.download_total_tests as f64;
+
+                    // Add partial progress for current test if in download phase
+                    let current_progress = if self.state.progress.phase == TestPhase::Download {
+                        let current_test_progress = if self.state.progress.total_iterations > 0 {
+                            self.state.progress.current_iteration as f64
+                                / self.state.progress.total_iterations as f64
+                        } else {
+                            0.0
+                        };
+                        current_test_progress / total
+                    } else {
+                        0.0
+                    };
+
+                    ((completed + current_progress) / total).min(1.0)
+                } else if matches!(
+                    self.state.progress.phase,
+                    TestPhase::Upload | TestPhase::Completed
+                ) {
+                    1.0
+                } else {
+                    0.0
+                }
+            }
+            TestType::Upload => {
+                if self.state.progress.upload_total_tests > 0 {
+                    let completed = self.state.progress.upload_completed_tests as f64;
+                    let total = self.state.progress.upload_total_tests as f64;
+
+                    // Add partial progress for current test if in upload phase
+                    let current_progress = if self.state.progress.phase == TestPhase::Upload {
+                        let current_test_progress = if self.state.progress.total_iterations > 0 {
+                            self.state.progress.current_iteration as f64
+                                / self.state.progress.total_iterations as f64
+                        } else {
+                            0.0
+                        };
+                        current_test_progress / total
+                    } else {
+                        0.0
+                    };
+
+                    ((completed + current_progress) / total).min(1.0)
+                } else if self.state.progress.phase == TestPhase::Completed {
+                    1.0
+                } else {
+                    0.0
+                }
+            }
+        }
     }
 
     fn draw_main_content(&self, f: &mut Frame, area: Rect) {
@@ -310,7 +518,7 @@ impl App {
             .split(area);
 
         self.draw_speed_graphs(f, chunks[0]);
-        self.draw_stats_and_boxplots(f, chunks[1]);
+        self.draw_boxplots(f, chunks[1]);
     }
 
     fn draw_speed_graphs(&self, f: &mut Frame, area: Rect) {
@@ -360,70 +568,9 @@ impl App {
         }
     }
 
-    fn draw_stats_and_boxplots(&self, f: &mut Frame, area: Rect) {
-        let chunks = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-            .split(area);
-
-        self.draw_latency_stats(f, chunks[0]);
-        self.draw_boxplots(f, chunks[1]);
-    }
-
-    fn draw_latency_stats(&self, f: &mut Frame, area: Rect) {
-        let stats_text = vec![
-            Line::from(vec![
-                Span::raw("Current: "),
-                Span::styled(
-                    format!("{:.1}ms", self.state.current_latency),
-                    Style::default().fg(Color::Yellow),
-                ),
-            ]),
-            Line::from(vec![
-                Span::raw("Average: "),
-                Span::styled(
-                    format!("{:.1}ms", self.state.avg_latency),
-                    Style::default().fg(Color::Green),
-                ),
-            ]),
-            Line::from(vec![
-                Span::raw("Min/Max: "),
-                Span::styled(
-                    format!(
-                        "{:.1}ms / {:.1}ms",
-                        if self.state.min_latency == f64::MAX {
-                            0.0
-                        } else {
-                            self.state.min_latency
-                        },
-                        self.state.max_latency
-                    ),
-                    Style::default().fg(Color::Cyan),
-                ),
-            ]),
-        ];
-
-        let paragraph = Paragraph::new(stats_text).block(
-            Block::default()
-                .title("Latency Stats")
-                .borders(Borders::ALL),
-        );
-        f.render_widget(paragraph, area);
-    }
-
     fn draw_boxplots(&self, f: &mut Frame, area: Rect) {
-        let boxplot_text = vec![
-            Line::from("Download: |----[===:===]----|"),
-            Line::from("Upload:   |--[=====:=====]--|"),
-            Line::from("Latency:  |-----[=:=]-------|"),
-        ];
-
-        let paragraph = Paragraph::new(boxplot_text).block(
-            Block::default()
-                .title("Measurement Boxplots")
-                .borders(Borders::ALL),
-        );
-        f.render_widget(paragraph, area);
+        let boxplot_grid = crate::tui::widgets::BoxplotGrid::new(&self.state.measurements);
+        f.render_widget(boxplot_grid, area);
     }
 
     fn draw_status(&self, f: &mut Frame, area: Rect) {
