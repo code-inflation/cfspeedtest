@@ -64,12 +64,13 @@ impl PayloadSize {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct Metadata {
-    city: String,
-    country: String,
-    ip: String,
-    asn: String,
-    colo: String,
+    pub city: String,
+    pub country: String,
+    pub ip: String,
+    pub asn: String,
+    pub colo: String,
 }
 
 impl Display for Metadata {
@@ -186,7 +187,7 @@ pub fn test_latency(client: &Client) -> f64 {
     req_latency
 }
 
-const TIME_THRESHOLD: Duration = Duration::from_secs(5);
+pub const TIME_THRESHOLD: Duration = Duration::from_secs(5);
 
 pub fn run_tests(
     client: &Client,

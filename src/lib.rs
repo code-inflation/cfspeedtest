@@ -2,6 +2,8 @@ pub mod boxplot;
 pub mod measurements;
 pub mod progress;
 pub mod speedtest;
+pub mod speedtest_tui;
+pub mod tui;
 use std::fmt;
 use std::fmt::Display;
 
@@ -37,7 +39,7 @@ impl OutputFormat {
 }
 
 /// Unofficial CLI for speed.cloudflare.com
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Clone)]
 #[command(author, version, about, long_about = None)]
 pub struct SpeedTestCLIOptions {
     /// Number of test runs per payload size.
@@ -85,6 +87,10 @@ pub struct SpeedTestCLIOptions {
     /// Generate shell completion script for the specified shell
     #[arg(long = "generate-completion", value_enum)]
     pub completion: Option<Shell>,
+
+    /// Launch TUI dashboard instead of CLI output
+    #[arg(long)]
+    pub tui: bool,
 }
 
 impl SpeedTestCLIOptions {
@@ -182,6 +188,7 @@ mod tests {
             download_only: false,
             upload_only: false,
             completion: None,
+            tui: false,
         };
 
         // Default: both download and upload
@@ -214,6 +221,7 @@ mod tests {
             download_only: false,
             upload_only: false,
             completion: None,
+            tui: false,
         };
 
         // Default: both download and upload

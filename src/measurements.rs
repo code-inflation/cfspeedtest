@@ -17,7 +17,7 @@ struct StatMeasurement {
     avg: f64,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 pub struct Measurement {
     pub test_type: TestType,
     pub payload_size: usize,

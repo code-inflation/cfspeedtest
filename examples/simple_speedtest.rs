@@ -17,6 +17,7 @@ fn main() {
         max_payload_size: PayloadSize::M10,
         disable_dynamic_max_payload_size: false,
         completion: None,
+        tui: false,
     };
 
     let measurements = speed_test(reqwest::blocking::Client::new(), options);
