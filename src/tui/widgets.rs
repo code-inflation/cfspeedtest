@@ -1,6 +1,7 @@
 use crate::measurements::{format_bytes, Measurement};
 use crate::speedtest::TestType;
 use crate::tui::app::SpeedData;
+use crate::tui::theme::{ThemedStyles, TokyoNight};
 use ratatui::{
     buffer::Buffer,
     layout::{Constraint, Direction, Layout, Rect},
@@ -160,7 +161,19 @@ impl<'a> Widget for SimpleLineChart<'a> {
 
                 if y <= bar_height {
                     if let Some(cell) = buf.cell_mut((screen_x, screen_y)) {
-                        cell.set_char('█').set_fg(self.color);
+                        // Use different characters for gradient effect
+                        let intensity = (y as f64 / height as f64 * 8.0) as usize;
+                        let char = match intensity {
+                            0..=1 => '▁',
+                            2 => '▂',
+                            3 => '▃',
+                            4 => '▄',
+                            5 => '▅',
+                            6 => '▆',
+                            7 => '▇',
+                            _ => '█',
+                        };
+                        cell.set_char(char).set_fg(self.color);
                     }
                 }
             }
@@ -218,8 +231,8 @@ impl BoxplotData {
 
     pub fn color(&self) -> Color {
         match self.test_type {
-            TestType::Download => Color::Green,
-            TestType::Upload => Color::Blue,
+            TestType::Download => TokyoNight::DOWNLOAD_PRIMARY,
+            TestType::Upload => TokyoNight::UPLOAD_PRIMARY,
         }
     }
 }
@@ -334,32 +347,35 @@ impl<'a> Widget for BoxplotWidget<'a> {
                 Span::raw("Count: "),
                 Span::styled(
                     format!("{}", self.data.count),
-                    Style::default().fg(Color::Yellow),
+                    ThemedStyles::boxplot_count(),
                 ),
             ]),
-            Line::from(boxplot_line),
+            Line::from(Span::styled(
+                boxplot_line,
+                Style::default().fg(self.data.color()),
+            )),
             Line::from(vec![
                 Span::raw("Min: "),
                 Span::styled(
                     format!("{:.1}", self.data.min),
-                    Style::default().fg(Color::Cyan),
+                    ThemedStyles::boxplot_highlight(),
                 ),
                 Span::raw(" Max: "),
                 Span::styled(
                     format!("{:.1}", self.data.max),
-                    Style::default().fg(Color::Cyan),
+                    ThemedStyles::boxplot_highlight(),
                 ),
             ]),
             Line::from(vec![
                 Span::raw("Avg: "),
                 Span::styled(
                     format!("{:.1}", self.data.avg),
-                    Style::default().fg(Color::White),
+                    ThemedStyles::boxplot_stats(),
                 ),
                 Span::raw(" Med: "),
                 Span::styled(
                     format!("{:.1}", self.data.median),
-                    Style::default().fg(Color::White),
+                    ThemedStyles::boxplot_stats(),
                 ),
             ]),
         ];
@@ -406,11 +422,12 @@ impl Widget for BoxplotGrid {
     fn render(self, area: Rect, buf: &mut Buffer) {
         if self.boxplots.is_empty() {
             let placeholder = Paragraph::new("No measurement data available yet...")
-                .style(Style::default().fg(Color::Gray))
+                .style(ThemedStyles::graph_placeholder())
                 .block(
                     Block::default()
                         .title("Measurement Boxplots")
-                        .borders(Borders::ALL),
+                        .borders(Borders::ALL)
+                        .border_style(ThemedStyles::boxplot_border()),
                 );
             placeholder.render(area, buf);
             return;
@@ -418,7 +435,8 @@ impl Widget for BoxplotGrid {
 
         let block = Block::default()
             .title("Measurement Boxplots")
-            .borders(Borders::ALL);
+            .borders(Borders::ALL)
+            .border_style(ThemedStyles::highlight_border());
 
         let inner = block.inner(area);
         block.render(area, buf);

@@ -1,11 +1,11 @@
 use crate::measurements::Measurement;
 use crate::speedtest::{Metadata, TestType};
+use crate::tui::theme::{ThemedStyles, TokyoNight};
 use crossbeam_channel::Receiver;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Style},
     widgets::{Block, Borders, Paragraph},
     Frame, Terminal,
 };
@@ -384,16 +384,20 @@ impl App {
     fn draw_title(&self, f: &mut Frame, area: Rect) {
         let title_text = if let Some(ref metadata) = self.state.metadata {
             format!(
-                "Cloudflare Speed Test - {} {} | IP: {} | Colo: {}",
+                " Cloudflare Speed Test - {} {} | IP: {} | Colo: {}",
                 metadata.city, metadata.country, metadata.ip, metadata.colo
             )
         } else {
-            "Cloudflare Speed Test - Loading...".to_string()
+            " Cloudflare Speed Test - Loading...".to_string()
         };
 
         let title = Paragraph::new(title_text)
-            .style(Style::default().fg(Color::Cyan))
-            .block(Block::default().borders(Borders::ALL));
+            .style(ThemedStyles::title())
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(ThemedStyles::title_border()),
+            );
         f.render_widget(title, area);
     }
 
@@ -412,33 +416,36 @@ impl App {
         let upload_progress = self.calculate_adaptive_progress(TestType::Upload);
 
         // Download status with progress bar and text
-        let download_color = match self.state.progress.phase {
-            TestPhase::Download => Color::Green,
-            TestPhase::Completed if download_progress >= 1.0 => Color::Green,
-            _ if download_progress >= 1.0 => Color::Green,
-            _ => Color::Gray,
+        let download_style = match self.state.progress.phase {
+            TestPhase::Download => ThemedStyles::progress_download_active(),
+            TestPhase::Completed if download_progress >= 1.0 => {
+                ThemedStyles::progress_download_complete()
+            }
+            _ if download_progress >= 1.0 => ThemedStyles::progress_download_complete(),
+            _ => ThemedStyles::progress_inactive(),
         };
 
-        let download_text = format!("Download: {}", self.state.progress.download_status);
-        let download_paragraph =
-            Paragraph::new(download_text).style(Style::default().fg(download_color));
+        let download_text = format!(" Download: {}", self.state.progress.download_status);
+        let download_paragraph = Paragraph::new(download_text).style(download_style);
         f.render_widget(download_paragraph, chunks[0]);
 
         // Upload status with progress bar and text
-        let upload_color = match self.state.progress.phase {
-            TestPhase::Upload => Color::Blue,
-            TestPhase::Completed if upload_progress >= 1.0 => Color::Blue,
-            _ if upload_progress >= 1.0 => Color::Blue,
-            _ => Color::Gray,
+        let upload_style = match self.state.progress.phase {
+            TestPhase::Upload => ThemedStyles::progress_upload_active(),
+            TestPhase::Completed if upload_progress >= 1.0 => {
+                ThemedStyles::progress_upload_complete()
+            }
+            _ if upload_progress >= 1.0 => ThemedStyles::progress_upload_complete(),
+            _ => ThemedStyles::progress_inactive(),
         };
 
-        let upload_text = format!("Upload:   {}", self.state.progress.upload_status);
-        let upload_paragraph = Paragraph::new(upload_text).style(Style::default().fg(upload_color));
+        let upload_text = format!(" Upload:   {}", self.state.progress.upload_status);
+        let upload_paragraph = Paragraph::new(upload_text).style(upload_style);
         f.render_widget(upload_paragraph, chunks[1]);
 
         // Latency stats in a compact single line
         let latency_text = format!(
-            "Latency:  Current: {:.1}ms | Average: {:.1}ms | Min/Max: {:.1}ms / {:.1}ms",
+            " Latency:  Current: {:.1}ms | Average: {:.1}ms | Min/Max: {:.1}ms / {:.1}ms",
             self.state.current_latency,
             self.state.avg_latency,
             if self.state.min_latency == f64::MAX {
@@ -448,8 +455,7 @@ impl App {
             },
             self.state.max_latency
         );
-        let latency_paragraph =
-            Paragraph::new(latency_text).style(Style::default().fg(Color::Yellow));
+        let latency_paragraph = Paragraph::new(latency_text).style(ThemedStyles::latency_stats());
         f.render_widget(latency_paragraph, chunks[2]);
     }
 
@@ -539,15 +545,19 @@ impl App {
         let block = Block::default()
             .title(title)
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Green));
+            .border_style(ThemedStyles::download_graph_border());
 
         let inner = block.inner(area);
         f.render_widget(block, area);
 
         if !self.state.download_speeds.is_empty() {
             let graph_widget = crate::tui::widgets::LineGraph::new(&self.state.download_speeds)
-                .color(Color::Green);
+                .color(TokyoNight::DOWNLOAD_PRIMARY);
             f.render_widget(graph_widget, inner);
+        } else {
+            let placeholder =
+                Paragraph::new("Waiting for data...").style(ThemedStyles::graph_placeholder());
+            f.render_widget(placeholder, inner);
         }
     }
 
@@ -556,15 +566,19 @@ impl App {
         let block = Block::default()
             .title(title)
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Blue));
+            .border_style(ThemedStyles::upload_graph_border());
 
         let inner = block.inner(area);
         f.render_widget(block, area);
 
         if !self.state.upload_speeds.is_empty() {
-            let graph_widget =
-                crate::tui::widgets::LineGraph::new(&self.state.upload_speeds).color(Color::Blue);
+            let graph_widget = crate::tui::widgets::LineGraph::new(&self.state.upload_speeds)
+                .color(TokyoNight::UPLOAD_PRIMARY);
             f.render_widget(graph_widget, inner);
+        } else {
+            let placeholder =
+                Paragraph::new("Waiting for data...").style(ThemedStyles::graph_placeholder());
+            f.render_widget(placeholder, inner);
         }
     }
 
@@ -574,22 +588,34 @@ impl App {
     }
 
     fn draw_status(&self, f: &mut Frame, area: Rect) {
-        let status_text = match self.state.progress.phase {
-            TestPhase::Idle => "Ready to start tests. Press 'q' to quit.".to_string(),
-            TestPhase::Latency => "Running latency tests...".to_string(),
+        let (status_text, status_style) = match self.state.progress.phase {
+            TestPhase::Idle => (
+                " Ready to start tests. Press 'q' to quit.".to_string(),
+                ThemedStyles::status_idle(),
+            ),
+            TestPhase::Latency => (
+                " Running latency tests...".to_string(),
+                ThemedStyles::status_active(),
+            ),
             TestPhase::Download => {
                 if let (Some(payload_size), Some(_)) = (
                     self.state.progress.current_payload_size,
                     self.state.progress.current_test,
                 ) {
-                    format!(
-                        "Testing Download {}MB [{}/{}]",
-                        payload_size / 1_000_000,
-                        self.state.progress.current_iteration,
-                        self.state.progress.total_iterations
+                    (
+                        format!(
+                            " Testing Download {}MB [{}/{}]",
+                            payload_size / 1_000_000,
+                            self.state.progress.current_iteration,
+                            self.state.progress.total_iterations
+                        ),
+                        ThemedStyles::status_active(),
                     )
                 } else {
-                    "Testing Download...".to_string()
+                    (
+                        " Testing Download...".to_string(),
+                        ThemedStyles::status_active(),
+                    )
                 }
             }
             TestPhase::Upload => {
@@ -597,22 +623,33 @@ impl App {
                     self.state.progress.current_payload_size,
                     self.state.progress.current_test,
                 ) {
-                    format!(
-                        "Testing Upload {}MB [{}/{}]",
-                        payload_size / 1_000_000,
-                        self.state.progress.current_iteration,
-                        self.state.progress.total_iterations
+                    (
+                        format!(
+                            " Testing Upload {}MB [{}/{}]",
+                            payload_size / 1_000_000,
+                            self.state.progress.current_iteration,
+                            self.state.progress.total_iterations
+                        ),
+                        ThemedStyles::status_active(),
                     )
                 } else {
-                    "Testing Upload...".to_string()
+                    (
+                        " Testing Upload...".to_string(),
+                        ThemedStyles::status_active(),
+                    )
                 }
             }
-            TestPhase::Completed => "All tests completed! Press 'q' to quit.".to_string(),
+            TestPhase::Completed => (
+                " All tests completed! Press 'q' to quit.".to_string(),
+                ThemedStyles::status_complete(),
+            ),
         };
 
-        let paragraph = Paragraph::new(status_text)
-            .style(Style::default().fg(Color::White))
-            .block(Block::default().borders(Borders::ALL));
+        let paragraph = Paragraph::new(status_text).style(status_style).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(ThemedStyles::status_border()),
+        );
         f.render_widget(paragraph, area);
     }
 }
