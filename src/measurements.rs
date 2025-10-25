@@ -163,13 +163,13 @@ fn calc_stats(mbit_measurements: Vec<f64>) -> Option<(f64, f64, f64, f64, f64, f
         ));
     }
 
-    let q1 = if length % 2 == 0 {
+    let q1 = if length.is_multiple_of(2) {
         median(&sorted_data[0..length / 2])
     } else {
         median(&sorted_data[0..length.div_ceil(2)])
     };
 
-    let q3 = if length % 2 == 0 {
+    let q3 = if length.is_multiple_of(2) {
         median(&sorted_data[length / 2..length])
     } else {
         median(&sorted_data[length.div_ceil(2)..length])
@@ -187,7 +187,7 @@ fn calc_stats(mbit_measurements: Vec<f64>) -> Option<(f64, f64, f64, f64, f64, f
 
 fn median(data: &[f64]) -> f64 {
     let length = data.len();
-    if length % 2 == 0 {
+    if length.is_multiple_of(2) {
         (data[length / 2 - 1] + data[length / 2]) / 2.0
     } else {
         data[length / 2]
