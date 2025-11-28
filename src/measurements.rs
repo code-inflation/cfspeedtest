@@ -24,6 +24,14 @@ pub struct Measurement {
     pub mbit: f64,
 }
 
+#[derive(Serialize)]
+pub struct LatencyMeasurement {
+    pub avg_latency_ms: f64,
+    pub min_latency_ms: f64,
+    pub max_latency_ms: f64,
+    pub latency_measurements: Vec<f64>,
+}
+
 impl Display for Measurement {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -38,6 +46,7 @@ impl Display for Measurement {
 
 pub(crate) fn log_measurements(
     measurements: &[Measurement],
+    latency_measurement: Option<&LatencyMeasurement>,
     payload_sizes: Vec<usize>,
     verbose: bool,
     output_format: OutputFormat,
@@ -70,12 +79,33 @@ pub(crate) fn log_measurements(
             wtr.flush().unwrap();
         }
         OutputFormat::Json => {
-            serde_json::to_writer(io::stdout(), &stat_measurements).unwrap();
+            let mut output = serde_json::Map::new();
+            output.insert(
+                "speed_measurements".to_string(),
+                serde_json::to_value(&stat_measurements).unwrap(),
+            );
+            if let Some(latency) = latency_measurement {
+                output.insert(
+                    "latency_measurement".to_string(),
+                    serde_json::to_value(latency).unwrap(),
+                );
+            }
+            serde_json::to_writer(io::stdout(), &output).unwrap();
             println!();
         }
         OutputFormat::JsonPretty => {
-            // json_pretty output test
-            serde_json::to_writer_pretty(io::stdout(), &stat_measurements).unwrap();
+            let mut output = serde_json::Map::new();
+            output.insert(
+                "speed_measurements".to_string(),
+                serde_json::to_value(&stat_measurements).unwrap(),
+            );
+            if let Some(latency) = latency_measurement {
+                output.insert(
+                    "latency_measurement".to_string(),
+                    serde_json::to_value(latency).unwrap(),
+                );
+            }
+            serde_json::to_writer_pretty(io::stdout(), &output).unwrap();
             println!();
         }
         OutputFormat::StdOut => {}
