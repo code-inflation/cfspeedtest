@@ -1,4 +1,5 @@
 use crate::boxplot;
+use crate::speedtest::Metadata;
 use crate::speedtest::TestType;
 use crate::OutputFormat;
 use indexmap::IndexSet;
@@ -50,6 +51,7 @@ pub(crate) fn log_measurements(
     payload_sizes: Vec<usize>,
     verbose: bool,
     output_format: OutputFormat,
+    metadata: Option<&Metadata>,
 ) {
     if output_format == OutputFormat::StdOut {
         println!("\nSummary Statistics");
@@ -79,38 +81,43 @@ pub(crate) fn log_measurements(
             wtr.flush().unwrap();
         }
         OutputFormat::Json => {
-            let mut output = serde_json::Map::new();
-            output.insert(
-                "speed_measurements".to_string(),
-                serde_json::to_value(&stat_measurements).unwrap(),
-            );
-            if let Some(latency) = latency_measurement {
-                output.insert(
-                    "latency_measurement".to_string(),
-                    serde_json::to_value(latency).unwrap(),
-                );
-            }
+            let output = compose_output_json(&stat_measurements, latency_measurement, metadata);
             serde_json::to_writer(io::stdout(), &output).unwrap();
             println!();
         }
         OutputFormat::JsonPretty => {
-            let mut output = serde_json::Map::new();
-            output.insert(
-                "speed_measurements".to_string(),
-                serde_json::to_value(&stat_measurements).unwrap(),
-            );
-            if let Some(latency) = latency_measurement {
-                output.insert(
-                    "latency_measurement".to_string(),
-                    serde_json::to_value(latency).unwrap(),
-                );
-            }
+            let output = compose_output_json(&stat_measurements, latency_measurement, metadata);
             serde_json::to_writer_pretty(io::stdout(), &output).unwrap();
             println!();
         }
         OutputFormat::StdOut => {}
         OutputFormat::None => {}
     }
+}
+
+fn compose_output_json(
+    stat_measurements: &[StatMeasurement],
+    latency_measurement: Option<&LatencyMeasurement>,
+    metadata: Option<&Metadata>,
+) -> serde_json::Map<String, serde_json::Value> {
+    let mut output = serde_json::Map::new();
+    output.insert(
+        "speed_measurements".to_string(),
+        serde_json::to_value(stat_measurements).unwrap(),
+    );
+    if let Some(latency) = latency_measurement {
+        output.insert(
+            "latency_measurement".to_string(),
+            serde_json::to_value(latency).unwrap(),
+        );
+    }
+    if let Some(metadata) = metadata {
+        output.insert(
+            "metadata".to_string(),
+            serde_json::to_value(metadata).unwrap(),
+        );
+    }
+    output
 }
 
 fn log_measurements_by_test_type(
@@ -316,5 +323,61 @@ mod tests {
     #[test]
     fn test_median_single_value() {
         assert_eq!(median(&[5.0]), 5.0);
+    }
+
+    #[test]
+    fn test_compose_output_json_includes_metadata() {
+        let stat_measurements = vec![StatMeasurement {
+            test_type: TestType::Download,
+            payload_size: 100_000,
+            min: 1.0,
+            q1: 1.5,
+            median: 2.0,
+            q3: 2.5,
+            max: 3.0,
+            avg: 2.0,
+        }];
+        let latency = LatencyMeasurement {
+            avg_latency_ms: 10.0,
+            min_latency_ms: 9.0,
+            max_latency_ms: 11.0,
+            latency_measurements: vec![9.0, 10.0, 11.0],
+        };
+        let metadata = Metadata {
+            city: "City".to_string(),
+            country: "Country".to_string(),
+            ip: "127.0.0.1".to_string(),
+            asn: "ASN".to_string(),
+            colo: "ABC".to_string(),
+        };
+
+        let output =
+            super::compose_output_json(&stat_measurements, Some(&latency), Some(&metadata));
+
+        let metadata_value = output.get("metadata").expect("metadata missing");
+        let metadata_obj = metadata_value.as_object().expect("metadata not an object");
+        assert_eq!(
+            metadata_obj.get("city").and_then(|v| v.as_str()),
+            Some("City")
+        );
+        assert_eq!(
+            metadata_obj.get("country").and_then(|v| v.as_str()),
+            Some("Country")
+        );
+        assert_eq!(
+            metadata_obj.get("ip").and_then(|v| v.as_str()),
+            Some("127.0.0.1")
+        );
+        assert_eq!(
+            metadata_obj.get("asn").and_then(|v| v.as_str()),
+            Some("ASN")
+        );
+        assert_eq!(
+            metadata_obj.get("colo").and_then(|v| v.as_str()),
+            Some("ABC")
+        );
+
+        assert!(output.get("latency_measurement").is_some());
+        assert!(output.get("speed_measurements").is_some());
     }
 }

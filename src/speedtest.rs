@@ -65,12 +65,13 @@ impl PayloadSize {
     }
 }
 
+#[derive(Clone, Debug, Serialize)]
 pub struct Metadata {
-    city: String,
-    country: String,
-    ip: String,
-    asn: String,
-    colo: String,
+    pub city: String,
+    pub country: String,
+    pub ip: String,
+    pub asn: String,
+    pub colo: String,
 }
 
 impl Display for Metadata {
@@ -146,6 +147,7 @@ pub fn speed_test(client: Client, options: SpeedTestCLIOptions) -> Vec<Measureme
         payload_sizes,
         options.verbose,
         options.output_format,
+        Some(&metadata),
     );
     measurements
 }
