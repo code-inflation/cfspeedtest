@@ -101,22 +101,22 @@ fn compose_output_json(
     metadata: Option<&Metadata>,
 ) -> serde_json::Map<String, serde_json::Value> {
     let mut output = serde_json::Map::new();
-    output.insert(
-        "speed_measurements".to_string(),
-        serde_json::to_value(stat_measurements).unwrap(),
-    );
-    if let Some(latency) = latency_measurement {
-        output.insert(
-            "latency_measurement".to_string(),
-            serde_json::to_value(latency).unwrap(),
-        );
-    }
     if let Some(metadata) = metadata {
         output.insert(
             "metadata".to_string(),
             serde_json::to_value(metadata).unwrap(),
         );
     }
+    if let Some(latency) = latency_measurement {
+        output.insert(
+            "latency_measurement".to_string(),
+            serde_json::to_value(latency).unwrap(),
+        );
+    }
+    output.insert(
+        "speed_measurements".to_string(),
+        serde_json::to_value(stat_measurements).unwrap(),
+    );
     output
 }
 
@@ -379,5 +379,11 @@ mod tests {
 
         assert!(output.get("latency_measurement").is_some());
         assert!(output.get("speed_measurements").is_some());
+
+        let keys: Vec<&str> = output.keys().map(String::as_str).collect();
+        assert_eq!(
+            keys,
+            vec!["metadata", "latency_measurement", "speed_measurements"]
+        );
     }
 }
