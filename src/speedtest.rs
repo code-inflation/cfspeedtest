@@ -156,9 +156,9 @@ pub fn run_latency_test(
     output_format: OutputFormat,
 ) -> (Vec<f64>, f64) {
     let mut measurements: Vec<f64> = Vec::new();
-    for i in 0..=nr_latency_tests {
+    for i in 0..nr_latency_tests {
         if output_format == OutputFormat::StdOut {
-            print_progress("latency test", i, nr_latency_tests);
+            print_progress("latency test", i + 1, nr_latency_tests);
         }
         let latency = test_latency(client);
         measurements.push(latency);
