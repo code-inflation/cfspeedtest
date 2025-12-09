@@ -201,7 +201,7 @@ pub fn test_latency(client: &Client) -> f64 {
                         return duration; // Return full duration if we can't parse server timing
                     }
                 };
-                
+
                 match re.captures(header_str) {
                     Some(captures) => match captures.get(1) {
                         Some(dur_match) => match dur_match.as_str().parse::<f64>() {
@@ -232,7 +232,7 @@ pub fn test_latency(client: &Client) -> f64 {
             return duration;
         }
     };
-    
+
     let mut req_latency = duration - cf_req_duration;
     if req_latency < 0.0 {
         log::warn!("Negative latency calculated: {req_latency}ms, using 0.0ms instead");
@@ -294,7 +294,7 @@ pub fn test_upload(client: &Client, payload_size_bytes: usize, output_format: Ou
     let url = &format!("{BASE_URL}/{UPLOAD_URL}");
     let payload: Vec<u8> = vec![1; payload_size_bytes];
     let req_builder = client.post(url).body(payload);
-    
+
     let start = Instant::now();
     let response = match req_builder.send() {
         Ok(res) => res,
@@ -306,7 +306,7 @@ pub fn test_upload(client: &Client, payload_size_bytes: usize, output_format: Ou
     let status_code = response.status();
     let duration = start.elapsed();
     let mbits = (payload_size_bytes as f64 * 8.0 / 1_000_000.0) / duration.as_secs_f64();
-    
+
     if output_format == OutputFormat::StdOut {
         print_current_speed(mbits, duration, status_code, payload_size_bytes);
     }
@@ -320,7 +320,7 @@ pub fn test_download(
 ) -> f64 {
     let url = &format!("{BASE_URL}/{DOWNLOAD_URL}{payload_size_bytes}");
     let req_builder = client.get(url);
-    
+
     let start = Instant::now();
     let response = match req_builder.send() {
         Ok(res) => res,
@@ -333,7 +333,7 @@ pub fn test_download(
     let _res_bytes = response.bytes();
     let duration = start.elapsed();
     let mbits = (payload_size_bytes as f64 * 8.0 / 1_000_000.0) / duration.as_secs_f64();
-    
+
     if output_format == OutputFormat::StdOut {
         print_current_speed(mbits, duration, status_code, payload_size_bytes);
     }

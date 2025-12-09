@@ -26,7 +26,7 @@ fn main() {
     if options.output_format == OutputFormat::StdOut {
         println!("Starting Cloudflare speed test");
     }
-    
+
     let client = match build_http_client(&options) {
         Ok(client) => client,
         Err(e) => {
@@ -34,23 +34,29 @@ fn main() {
             std::process::exit(1);
         }
     };
-    
+
     speed_test(client, options);
 }
 
 fn build_http_client(options: &SpeedTestCLIOptions) -> Result<reqwest::blocking::Client, String> {
-    let mut builder = reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(30));
-    
+    let mut builder =
+        reqwest::blocking::Client::builder().timeout(std::time::Duration::from_secs(30));
+
     if let Some(ref ip) = options.ipv4 {
-        let ip_addr = ip.parse::<IpAddr>().map_err(|e| format!("Invalid IPv4 address '{}': {}", ip, e))?;
+        let ip_addr = ip
+            .parse::<IpAddr>()
+            .map_err(|e| format!("Invalid IPv4 address '{}': {}", ip, e))?;
         builder = builder.local_address(ip_addr);
     } else if let Some(ref ip) = options.ipv6 {
-        let ip_addr = ip.parse::<IpAddr>().map_err(|e| format!("Invalid IPv6 address '{}': {}", ip, e))?;
+        let ip_addr = ip
+            .parse::<IpAddr>()
+            .map_err(|e| format!("Invalid IPv6 address '{}': {}", ip, e))?;
         builder = builder.local_address(ip_addr);
     }
-    
-    builder.build().map_err(|e| format!("Failed to initialize HTTP client: {}", e))
+
+    builder
+        .build()
+        .map_err(|e| format!("Failed to initialize HTTP client: {}", e))
 }
 
 #[cfg(test)]
@@ -64,7 +70,7 @@ mod tests {
             ipv6: None,
             ..Default::default()
         };
-        
+
         let result = build_http_client(&options);
         assert!(result.is_err());
         let err = result.unwrap_err();
@@ -79,7 +85,7 @@ mod tests {
             ipv6: Some("invalid-ipv6".to_string()),
             ..Default::default()
         };
-        
+
         let result = build_http_client(&options);
         assert!(result.is_err());
         let err = result.unwrap_err();
@@ -94,7 +100,7 @@ mod tests {
             ipv6: None,
             ..Default::default()
         };
-        
+
         let result = build_http_client(&options);
         assert!(result.is_ok());
     }
@@ -106,7 +112,7 @@ mod tests {
             ipv6: Some("::1".to_string()),
             ..Default::default()
         };
-        
+
         let result = build_http_client(&options);
         assert!(result.is_ok());
     }
@@ -118,7 +124,7 @@ mod tests {
             ipv6: None,
             ..Default::default()
         };
-        
+
         let result = build_http_client(&options);
         assert!(result.is_ok());
     }
