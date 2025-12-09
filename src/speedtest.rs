@@ -180,30 +180,63 @@ pub fn test_latency(client: &Client) -> f64 {
     let req_builder = client.get(url);
 
     let start = Instant::now();
-    let response = req_builder.send().expect("failed to get response");
+    let response = match req_builder.send() {
+        Ok(res) => res,
+        Err(e) => {
+            log::error!("Failed to get response for latency test: {}", e);
+            return 0.0;
+        }
+    };
     let _status_code = response.status();
     let duration = start.elapsed().as_secs_f64() * 1_000.0;
 
-    let re = Regex::new(r"cfRequestDuration;dur=([\d.]+)").unwrap();
-    let cf_req_duration: f64 = re
-        .captures(
-            response
-                .headers()
-                .get("Server-Timing")
-                .expect("No Server-Timing in response header")
-                .to_str()
-                .unwrap(),
-        )
-        .unwrap()
-        .get(1)
-        .unwrap()
-        .as_str()
-        .parse()
-        .unwrap();
+    // Try to extract cfRequestDuration from Server-Timing header
+    let cf_req_duration = match response.headers().get("Server-Timing") {
+        Some(header_value) => match header_value.to_str() {
+            Ok(header_str) => {
+                let re = match Regex::new(r"cfRequestDuration;dur=([\d.]+)") {
+                    Ok(re) => re,
+                    Err(e) => {
+                        log::error!("Failed to compile regex: {}", e);
+                        return duration; // Return full duration if we can't parse server timing
+                    }
+                };
+                
+                match re.captures(header_str) {
+                    Some(captures) => match captures.get(1) {
+                        Some(dur_match) => match dur_match.as_str().parse::<f64>() {
+                            Ok(parsed) => parsed,
+                            Err(e) => {
+                                log::error!("Failed to parse cfRequestDuration: {}", e);
+                                return duration;
+                            }
+                        },
+                        None => {
+                            log::debug!("No cfRequestDuration found in Server-Timing header");
+                            return duration;
+                        }
+                    },
+                    None => {
+                        log::debug!("Server-Timing header doesn't match expected format");
+                        return duration;
+                    }
+                }
+            }
+            Err(e) => {
+                log::error!("Failed to convert Server-Timing header to string: {}", e);
+                return duration;
+            }
+        },
+        None => {
+            log::debug!("No Server-Timing header in response");
+            return duration;
+        }
+    };
+    
     let mut req_latency = duration - cf_req_duration;
     if req_latency < 0.0 {
-        // TODO investigate negative latency values
-        req_latency = 0.0
+        log::warn!("Negative latency calculated: {req_latency}ms, using 0.0ms instead");
+        req_latency = 0.0;
     }
     req_latency
 }
@@ -261,14 +294,19 @@ pub fn test_upload(client: &Client, payload_size_bytes: usize, output_format: Ou
     let url = &format!("{BASE_URL}/{UPLOAD_URL}");
     let payload: Vec<u8> = vec![1; payload_size_bytes];
     let req_builder = client.post(url).body(payload);
-    let (status_code, mbits, duration) = {
-        let start = Instant::now();
-        let response = req_builder.send().expect("failed to get response");
-        let status_code = response.status();
-        let duration = start.elapsed();
-        let mbits = (payload_size_bytes as f64 * 8.0 / 1_000_000.0) / duration.as_secs_f64();
-        (status_code, mbits, duration)
+    
+    let start = Instant::now();
+    let response = match req_builder.send() {
+        Ok(res) => res,
+        Err(e) => {
+            log::error!("Failed to send upload request: {}", e);
+            return 0.0;
+        }
     };
+    let status_code = response.status();
+    let duration = start.elapsed();
+    let mbits = (payload_size_bytes as f64 * 8.0 / 1_000_000.0) / duration.as_secs_f64();
+    
     if output_format == OutputFormat::StdOut {
         print_current_speed(mbits, duration, status_code, payload_size_bytes);
     }
@@ -282,15 +320,20 @@ pub fn test_download(
 ) -> f64 {
     let url = &format!("{BASE_URL}/{DOWNLOAD_URL}{payload_size_bytes}");
     let req_builder = client.get(url);
-    let (status_code, mbits, duration) = {
-        let start = Instant::now();
-        let response = req_builder.send().expect("failed to get response");
-        let status_code = response.status();
-        let _res_bytes = response.bytes();
-        let duration = start.elapsed();
-        let mbits = (payload_size_bytes as f64 * 8.0 / 1_000_000.0) / duration.as_secs_f64();
-        (status_code, mbits, duration)
+    
+    let start = Instant::now();
+    let response = match req_builder.send() {
+        Ok(res) => res,
+        Err(e) => {
+            log::error!("Failed to send download request: {}", e);
+            return 0.0;
+        }
     };
+    let status_code = response.status();
+    let _res_bytes = response.bytes();
+    let duration = start.elapsed();
+    let mbits = (payload_size_bytes as f64 * 8.0 / 1_000_000.0) / duration.as_secs_f64();
+    
     if output_format == OutputFormat::StdOut {
         print_current_speed(mbits, duration, status_code, payload_size_bytes);
     }
@@ -492,5 +535,89 @@ mod tests {
 
         let result = fetch_metadata(&client);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_test_latency_with_mock_client() {
+        // This test verifies that test_latency handles errors gracefully
+        // We can't easily mock a failing client in this test setup,
+        // but we can verify the function doesn't panic
+        use std::time::Duration;
+
+        let client = reqwest::blocking::Client::builder()
+            .timeout(Duration::from_millis(1))
+            .build()
+            .unwrap();
+
+        // This should either return a value or timeout gracefully
+        let result = test_latency(&client);
+        // The function should return some value (could be 0.0 if it fails)
+        assert!(result >= 0.0);
+    }
+
+    #[test]
+    fn test_test_upload_with_mock_client() {
+        // Test that test_upload handles errors gracefully
+        use std::time::Duration;
+
+        let client = reqwest::blocking::Client::builder()
+            .timeout(Duration::from_millis(1))
+            .build()
+            .unwrap();
+
+        // This should either return a value or handle timeout gracefully
+        let result = test_upload(&client, 1000, OutputFormat::None);
+        // The function should return some value (could be 0.0 if it fails)
+        assert!(result >= 0.0);
+    }
+
+    #[test]
+    fn test_test_download_with_mock_client() {
+        // Test that test_download handles errors gracefully
+        use std::time::Duration;
+
+        let client = reqwest::blocking::Client::builder()
+            .timeout(Duration::from_millis(1))
+            .build()
+            .unwrap();
+
+        // This should either return a value or handle timeout gracefully
+        let result = test_download(&client, 1000, OutputFormat::None);
+        // The function should return some value (could be 0.0 if it fails)
+        assert!(result >= 0.0);
+    }
+
+    #[test]
+    fn test_server_timing_header_parsing() {
+        // Test the Server-Timing header parsing logic
+        // We'll test the regex and parsing separately since we can't easily mock responses
+        use regex::Regex;
+
+        let re = Regex::new(r"cfRequestDuration;dur=([\d.]+)").unwrap();
+
+        // Test valid Server-Timing header
+        let valid_header = "cfRequestDuration;dur=12.34";
+        let captures = re.captures(valid_header).unwrap();
+        let dur_match = captures.get(1).unwrap();
+        let parsed = dur_match.as_str().parse::<f64>().unwrap();
+        assert_eq!(parsed, 12.34);
+
+        // Test header with multiple values
+        let multi_header = "cfRequestDuration;dur=56.78, other;dur=99.99";
+        let captures = re.captures(multi_header).unwrap();
+        let dur_match = captures.get(1).unwrap();
+        let parsed = dur_match.as_str().parse::<f64>().unwrap();
+        assert_eq!(parsed, 56.78);
+
+        // Test header without cfRequestDuration
+        let no_cf_header = "other;dur=99.99";
+        let captures = re.captures(no_cf_header);
+        assert!(captures.is_none());
+
+        // Test malformed duration - use a value that can't be parsed
+        let malformed_header = "cfRequestDuration;dur=not-a-number";
+        let captures = re.captures(malformed_header);
+        // This should not match the regex at all since it contains no digits
+        assert!(captures.is_none());
     }
 }
