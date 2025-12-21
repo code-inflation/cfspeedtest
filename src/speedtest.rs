@@ -11,12 +11,14 @@ use reqwest::{blocking::Client, StatusCode};
 use serde::Serialize;
 use std::{
     fmt::Display,
+    sync::atomic::{AtomicBool, Ordering},
     time::{Duration, Instant},
 };
 
 const BASE_URL: &str = "https://speed.cloudflare.com";
 const DOWNLOAD_URL: &str = "__down?bytes=";
 const UPLOAD_URL: &str = "__up";
+static WARNED_NEGATIVE_LATENCY: AtomicBool = AtomicBool::new(false);
 
 #[derive(Clone, Copy, Debug, Hash, Serialize, Eq, PartialEq)]
 pub enum TestType {
@@ -180,29 +182,37 @@ pub fn test_latency(client: &Client) -> f64 {
     let req_builder = client.get(url);
 
     let start = Instant::now();
-    let response = req_builder.send().expect("failed to get response");
+    let mut response = req_builder.send().expect("failed to get response");
     let _status_code = response.status();
-    let duration = start.elapsed().as_secs_f64() * 1_000.0;
+    // Drain body to complete the request; ignore errors.
+    let _ = std::io::copy(&mut response, &mut std::io::sink());
+    let total_ms = start.elapsed().as_secs_f64() * 1_000.0;
 
     let re = Regex::new(r"cfRequestDuration;dur=([\d.]+)").unwrap();
+    let server_timing = response
+        .headers()
+        .get("Server-Timing")
+        .expect("No Server-Timing in response header")
+        .to_str()
+        .unwrap();
     let cf_req_duration: f64 = re
-        .captures(
-            response
-                .headers()
-                .get("Server-Timing")
-                .expect("No Server-Timing in response header")
-                .to_str()
-                .unwrap(),
-        )
+        .captures(server_timing)
         .unwrap()
         .get(1)
         .unwrap()
         .as_str()
         .parse()
         .unwrap();
-    let mut req_latency = duration - cf_req_duration;
+    let mut req_latency = total_ms - cf_req_duration;
+    log::debug!(
+        "latency debug: total_ms={total_ms:.3} cf_req_duration_ms={cf_req_duration:.3} req_latency_total={req_latency:.3} server_timing={server_timing}"
+    );
     if req_latency < 0.0 {
-        // TODO investigate negative latency values
+        if !WARNED_NEGATIVE_LATENCY.swap(true, Ordering::Relaxed) {
+            log::warn!(
+                "negative latency after server timing subtraction; clamping to 0.0 (total_ms={total_ms:.3} cf_req_duration_ms={cf_req_duration:.3})"
+            );
+        }
         req_latency = 0.0
     }
     req_latency
@@ -261,14 +271,16 @@ pub fn test_upload(client: &Client, payload_size_bytes: usize, output_format: Ou
     let url = &format!("{BASE_URL}/{UPLOAD_URL}");
     let payload: Vec<u8> = vec![1; payload_size_bytes];
     let req_builder = client.post(url).body(payload);
-    let (status_code, mbits, duration) = {
+    let (mut response, status_code, mbits, duration) = {
         let start = Instant::now();
         let response = req_builder.send().expect("failed to get response");
         let status_code = response.status();
         let duration = start.elapsed();
         let mbits = (payload_size_bytes as f64 * 8.0 / 1_000_000.0) / duration.as_secs_f64();
-        (status_code, mbits, duration)
+        (response, status_code, mbits, duration)
     };
+    // Drain response after timing so we don't skew upload measurement.
+    let _ = std::io::copy(&mut response, &mut std::io::sink());
     if output_format == OutputFormat::StdOut {
         print_current_speed(mbits, duration, status_code, payload_size_bytes);
     }
@@ -284,9 +296,10 @@ pub fn test_download(
     let req_builder = client.get(url);
     let (status_code, mbits, duration) = {
         let start = Instant::now();
-        let response = req_builder.send().expect("failed to get response");
+        let mut response = req_builder.send().expect("failed to get response");
         let status_code = response.status();
-        let _res_bytes = response.bytes();
+        // Stream the body to avoid buffering the full payload in memory.
+        let _ = std::io::copy(&mut response, &mut std::io::sink());
         let duration = start.elapsed();
         let mbits = (payload_size_bytes as f64 * 8.0 / 1_000_000.0) / duration.as_secs_f64();
         (status_code, mbits, duration)
