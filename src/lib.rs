@@ -87,6 +87,24 @@ pub struct SpeedTestCLIOptions {
     pub completion: Option<Shell>,
 }
 
+impl Default for SpeedTestCLIOptions {
+    fn default() -> Self {
+        Self {
+            nr_tests: 10,
+            nr_latency_tests: 25,
+            max_payload_size: PayloadSize::M25,
+            output_format: OutputFormat::StdOut,
+            verbose: false,
+            ipv4: None,
+            ipv6: None,
+            disable_dynamic_max_payload_size: false,
+            download_only: false,
+            upload_only: false,
+            completion: None,
+        }
+    }
+}
+
 impl SpeedTestCLIOptions {
     /// Returns whether download tests should be performed
     pub fn should_download(&self) -> bool {
