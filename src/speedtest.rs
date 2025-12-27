@@ -11,12 +11,14 @@ use reqwest::{blocking::Client, StatusCode};
 use serde::Serialize;
 use std::{
     fmt::Display,
+    sync::atomic::{AtomicBool, Ordering},
     time::{Duration, Instant},
 };
 
 const BASE_URL: &str = "https://speed.cloudflare.com";
 const DOWNLOAD_URL: &str = "__down?bytes=";
 const UPLOAD_URL: &str = "__up";
+static WARNED_NEGATIVE_LATENCY: AtomicBool = AtomicBool::new(false);
 
 #[derive(Clone, Copy, Debug, Hash, Serialize, Eq, PartialEq)]
 pub enum TestType {
@@ -180,7 +182,7 @@ pub fn test_latency(client: &Client) -> f64 {
     let req_builder = client.get(url);
 
     let start = Instant::now();
-    let response = match req_builder.send() {
+    let mut response = match req_builder.send() {
         Ok(res) => res,
         Err(e) => {
             log::error!("Failed to get response for latency test: {}", e);
@@ -188,55 +190,64 @@ pub fn test_latency(client: &Client) -> f64 {
         }
     };
     let _status_code = response.status();
-    let duration = start.elapsed().as_secs_f64() * 1_000.0;
+    // Drain body to complete the request; ignore errors.
+    let _ = std::io::copy(&mut response, &mut std::io::sink());
+    let total_ms = start.elapsed().as_secs_f64() * 1_000.0;
 
     // Try to extract cfRequestDuration from Server-Timing header
-    let cf_req_duration = match response.headers().get("Server-Timing") {
-        Some(header_value) => match header_value.to_str() {
-            Ok(header_str) => {
-                let re = match Regex::new(r"cfRequestDuration;dur=([\d.]+)") {
-                    Ok(re) => re,
-                    Err(e) => {
-                        log::error!("Failed to compile regex: {}", e);
-                        return duration; // Return full duration if we can't parse server timing
-                    }
-                };
+    let re = match Regex::new(r"cfRequestDuration;dur=([\d.]+)") {
+        Ok(re) => re,
+        Err(e) => {
+            log::error!("Failed to compile regex: {}", e);
+            return total_ms;
+        }
+    };
 
-                match re.captures(header_str) {
-                    Some(captures) => match captures.get(1) {
-                        Some(dur_match) => match dur_match.as_str().parse::<f64>() {
-                            Ok(parsed) => parsed,
-                            Err(e) => {
-                                log::error!("Failed to parse cfRequestDuration: {}", e);
-                                return duration;
-                            }
-                        },
-                        None => {
-                            log::debug!("No cfRequestDuration found in Server-Timing header");
-                            return duration;
-                        }
-                    },
-                    None => {
-                        log::debug!("Server-Timing header doesn't match expected format");
-                        return duration;
-                    }
-                }
-            }
+    let server_timing = match response.headers().get("Server-Timing") {
+        Some(header_value) => match header_value.to_str() {
+            Ok(s) => s,
             Err(e) => {
                 log::error!("Failed to convert Server-Timing header to string: {}", e);
-                return duration;
+                return total_ms;
             }
         },
         None => {
             log::debug!("No Server-Timing header in response");
-            return duration;
+            return total_ms;
         }
     };
 
-    let mut req_latency = duration - cf_req_duration;
+    let cf_req_duration: f64 = match re.captures(server_timing) {
+        Some(captures) => match captures.get(1) {
+            Some(dur_match) => match dur_match.as_str().parse::<f64>() {
+                Ok(parsed) => parsed,
+                Err(e) => {
+                    log::error!("Failed to parse cfRequestDuration: {}", e);
+                    return total_ms;
+                }
+            },
+            None => {
+                log::debug!("No cfRequestDuration found in Server-Timing header");
+                return total_ms;
+            }
+        },
+        None => {
+            log::debug!("Server-Timing header doesn't match expected format");
+            return total_ms;
+        }
+    };
+
+    let mut req_latency = total_ms - cf_req_duration;
+    log::debug!(
+        "latency debug: total_ms={total_ms:.3} cf_req_duration_ms={cf_req_duration:.3} req_latency_total={req_latency:.3} server_timing={server_timing}"
+    );
     if req_latency < 0.0 {
-        log::warn!("Negative latency calculated: {req_latency}ms, using 0.0ms instead");
-        req_latency = 0.0;
+        if !WARNED_NEGATIVE_LATENCY.swap(true, Ordering::Relaxed) {
+            log::warn!(
+                "negative latency after server timing subtraction; clamping to 0.0 (total_ms={total_ms:.3} cf_req_duration_ms={cf_req_duration:.3})"
+            );
+        }
+        req_latency = 0.0
     }
     req_latency
 }
@@ -296,7 +307,7 @@ pub fn test_upload(client: &Client, payload_size_bytes: usize, output_format: Ou
     let req_builder = client.post(url).body(payload);
 
     let start = Instant::now();
-    let response = match req_builder.send() {
+    let mut response = match req_builder.send() {
         Ok(res) => res,
         Err(e) => {
             log::error!("Failed to send upload request: {}", e);
@@ -307,6 +318,8 @@ pub fn test_upload(client: &Client, payload_size_bytes: usize, output_format: Ou
     let duration = start.elapsed();
     let mbits = (payload_size_bytes as f64 * 8.0 / 1_000_000.0) / duration.as_secs_f64();
 
+    // Drain response after timing so we don't skew upload measurement.
+    let _ = std::io::copy(&mut response, &mut std::io::sink());
     if output_format == OutputFormat::StdOut {
         print_current_speed(mbits, duration, status_code, payload_size_bytes);
     }
@@ -322,7 +335,7 @@ pub fn test_download(
     let req_builder = client.get(url);
 
     let start = Instant::now();
-    let response = match req_builder.send() {
+    let mut response = match req_builder.send() {
         Ok(res) => res,
         Err(e) => {
             log::error!("Failed to send download request: {}", e);
@@ -330,7 +343,8 @@ pub fn test_download(
         }
     };
     let status_code = response.status();
-    let _res_bytes = response.bytes();
+    // Stream the body to avoid buffering the full payload in memory.
+    let _ = std::io::copy(&mut response, &mut std::io::sink());
     let duration = start.elapsed();
     let mbits = (payload_size_bytes as f64 * 8.0 / 1_000_000.0) / duration.as_secs_f64();
 
