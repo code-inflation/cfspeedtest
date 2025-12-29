@@ -2,7 +2,7 @@ use crate::measurements::format_bytes;
 use crate::measurements::log_measurements;
 use crate::measurements::LatencyMeasurement;
 use crate::measurements::Measurement;
-use crate::progress::print_progress;
+use crate::progress::Progress;
 use crate::OutputFormat;
 use crate::SpeedTestCLIOptions;
 use log;
@@ -160,18 +160,29 @@ pub fn run_latency_test(
     output_format: OutputFormat,
 ) -> (Vec<f64>, f64) {
     let mut measurements: Vec<f64> = Vec::new();
+    let progress = if output_format == OutputFormat::StdOut {
+        Some(Progress::new("latency test", nr_latency_tests))
+    } else {
+        None
+    };
+
     for i in 0..nr_latency_tests {
-        if output_format == OutputFormat::StdOut {
-            print_progress("latency test", i + 1, nr_latency_tests);
+        if let Some(ref pb) = progress {
+            pb.set_position(i + 1);
         }
         let latency = test_latency(client);
         measurements.push(latency);
     }
+
+    if let Some(pb) = progress {
+        pb.finish();
+    }
+
     let avg_latency = measurements.iter().sum::<f64>() / measurements.len() as f64;
 
     if output_format == OutputFormat::StdOut {
         println!(
-            "\nAvg GET request latency {avg_latency:.2} ms (RTT excluding server processing time)\n"
+            "Avg GET request latency {avg_latency:.2} ms (RTT excluding server processing time)\n"
         );
     }
     (measurements, avg_latency)
@@ -233,13 +244,19 @@ pub fn run_tests(
     for payload_size in payload_sizes {
         log::debug!("running tests for payload_size {payload_size}");
         let start = Instant::now();
+
+        let progress = if output_format == OutputFormat::StdOut {
+            Some(Progress::new(
+                &format!("{:?} {:<5}", test_type, format_bytes(payload_size)),
+                nr_tests,
+            ))
+        } else {
+            None
+        };
+
         for i in 0..nr_tests {
-            if output_format == OutputFormat::StdOut {
-                print_progress(
-                    &format!("{:?} {:<5}", test_type, format_bytes(payload_size)),
-                    i,
-                    nr_tests,
-                );
+            if let Some(ref pb) = progress {
+                pb.set_position(i);
             }
             let mbit = test_fn(client, payload_size, output_format);
             measurements.push(Measurement {
@@ -248,14 +265,13 @@ pub fn run_tests(
                 mbit,
             });
         }
-        if output_format == OutputFormat::StdOut {
-            print_progress(
-                &format!("{:?} {:<5}", test_type, format_bytes(payload_size)),
-                nr_tests,
-                nr_tests,
-            );
+
+        if let Some(pb) = progress {
+            pb.set_position(nr_tests);
+            pb.finish();
             println!()
         }
+
         let duration = start.elapsed();
 
         // only check TIME_THRESHOLD if dynamic max payload sizing is not disabled

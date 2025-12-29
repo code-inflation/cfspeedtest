@@ -1,15 +1,27 @@
-use std::io::stdout;
-use std::io::Write;
+use indicatif::{ProgressBar, ProgressStyle};
 
-pub fn print_progress(name: &str, curr: u32, max: u32) {
-    const BAR_LEN: u32 = 30;
-    let progress_line = ((curr as f32 / max as f32) * BAR_LEN as f32) as u32;
-    let remaining_line = BAR_LEN - progress_line;
-    print!(
-        "\r{:<15} [{}{}]",
-        name,
-        (0..progress_line).map(|_| "=").collect::<String>(),
-        (0..remaining_line).map(|_| "-").collect::<String>(),
-    );
-    stdout().flush().expect("error printing progress bar");
+pub struct Progress {
+    bar: ProgressBar,
+}
+
+impl Progress {
+    pub fn new(name: &str, max: u32) -> Self {
+        let bar = ProgressBar::new(max as u64);
+        bar.set_style(
+            ProgressStyle::default_bar()
+                .template("{prefix:<15} [{bar:30}]")
+                .unwrap()
+                .progress_chars("=-"),
+        );
+        bar.set_prefix(name.to_string());
+        Progress { bar }
+    }
+
+    pub fn set_position(&self, curr: u32) {
+        self.bar.set_position(curr as u64);
+    }
+
+    pub fn finish(&self) {
+        self.bar.finish();
+    }
 }
