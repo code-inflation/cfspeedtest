@@ -233,7 +233,7 @@ const TIME_THRESHOLD: Duration = Duration::from_secs(5);
 
 pub fn run_tests(
     client: &Client,
-    test_fn: fn(&Client, usize, OutputFormat) -> (f64, String),
+    test_fn: fn(&Client, usize, OutputFormat) -> (f64, Duration),
     test_type: TestType,
     payload_sizes: Vec<usize>,
     nr_tests: u32,
@@ -255,9 +255,16 @@ pub fn run_tests(
         };
 
         for i in 0..nr_tests {
-            let (mbit, message) = test_fn(client, payload_size, output_format);
+            let (mbit, duration) = test_fn(client, payload_size, output_format);
+
             if let Some(ref pb) = progress {
                 pb.set_position(i + 1);
+                let message = format!(
+                    "  {:>6.2} mbit/s | {:>5} in {:>4}ms",
+                    mbit,
+                    format_bytes(payload_size),
+                    duration.as_millis()
+                );
                 pb.set_message(message);
             }
             measurements.push(Measurement {
@@ -286,8 +293,8 @@ pub fn run_tests(
 pub fn test_upload(
     client: &Client,
     payload_size_bytes: usize,
-    output_format: OutputFormat,
-) -> (f64, String) {
+    _output_format: OutputFormat,
+) -> (f64, Duration) {
     let url = &format!("{BASE_URL}/{UPLOAD_URL}");
     let payload: Vec<u8> = vec![1; payload_size_bytes];
     let req_builder = client.post(url).body(payload);
@@ -300,24 +307,14 @@ pub fn test_upload(
     };
     // Drain response after timing so we don't skew upload measurement.
     let _ = std::io::copy(&mut response, &mut std::io::sink());
-    let message = if output_format == OutputFormat::StdOut {
-        format!(
-            "  {:>6.2} mbit/s | {:>5} in {:>4}ms",
-            mbits,
-            format_bytes(payload_size_bytes),
-            duration.as_millis()
-        )
-    } else {
-        String::new()
-    };
-    (mbits, message)
+    (mbits, duration)
 }
 
 pub fn test_download(
     client: &Client,
     payload_size_bytes: usize,
-    output_format: OutputFormat,
-) -> (f64, String) {
+    _output_format: OutputFormat,
+) -> (f64, Duration) {
     let url = &format!("{BASE_URL}/{DOWNLOAD_URL}{payload_size_bytes}");
     let req_builder = client.get(url);
     let (mbits, duration) = {
@@ -329,17 +326,7 @@ pub fn test_download(
         let mbits = (payload_size_bytes as f64 * 8.0 / 1_000_000.0) / duration.as_secs_f64();
         (mbits, duration)
     };
-    let message = if output_format == OutputFormat::StdOut {
-        format!(
-            "  {:>6.2} mbit/s | {:>5} in {:>4}ms",
-            mbits,
-            format_bytes(payload_size_bytes),
-            duration.as_millis()
-        )
-    } else {
-        String::new()
-    };
-    (mbits, message)
+    (mbits, duration)
 }
 
 pub fn fetch_metadata(client: &Client) -> Result<Metadata, reqwest::Error> {
