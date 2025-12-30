@@ -45,7 +45,7 @@ pub struct SpeedTestCLIOptions {
     pub nr_tests: u32,
 
     /// Number of latency tests to run
-    #[arg(long, default_value_t = 25)]
+    #[arg(value_parser = clap::value_parser!(u32).range(1..1000), long, default_value_t = 25)]
     pub nr_latency_tests: u32,
 
     /// The max payload size in bytes to use [100k, 1m, 10m, 25m or 100m]
