@@ -9,7 +9,7 @@ impl Progress {
         let bar = ProgressBar::new(max as u64);
         bar.set_style(
             ProgressStyle::default_bar()
-                .template("{prefix:<15} [{bar:30}]")
+                .template("{prefix:<15} [{bar:30}] {msg}")
                 .unwrap()
                 .progress_chars("=-"),
         );
@@ -23,5 +23,9 @@ impl Progress {
 
     pub fn finish(&self) {
         self.bar.finish();
+    }
+
+    pub fn set_message(&self, msg: impl Into<std::borrow::Cow<'static, str>>) {
+        self.bar.set_message(msg);
     }
 }
