@@ -231,4 +231,58 @@ mod tests {
         assert!(!options.should_upload());
         assert!(options.should_download());
     }
+
+    #[test]
+    fn test_nr_tests_range_validation() {
+        // Test that nr_tests rejects 0
+        let result = SpeedTestCLIOptions::try_parse_from(vec!["cfspeedtest", "--nr-tests", "0"]);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("0 is not in 1..1000"));
+
+        // Test that nr_tests accepts 1 (minimum valid value)
+        let result = SpeedTestCLIOptions::try_parse_from(vec!["cfspeedtest", "--nr-tests", "1"]);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().nr_tests, 1);
+
+        // Test that nr_tests accepts 999 (maximum valid value)
+        let result = SpeedTestCLIOptions::try_parse_from(vec!["cfspeedtest", "--nr-tests", "999"]);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().nr_tests, 999);
+
+        // Test that nr_tests rejects 1000
+        let result = SpeedTestCLIOptions::try_parse_from(vec!["cfspeedtest", "--nr-tests", "1000"]);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("1000 is not in 1..1000"));
+    }
+
+    #[test]
+    fn test_nr_latency_tests_range_validation() {
+        // Test that nr_latency_tests rejects 0
+        let result =
+            SpeedTestCLIOptions::try_parse_from(vec!["cfspeedtest", "--nr-latency-tests", "0"]);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("0 is not in 1..1000"));
+
+        // Test that nr_latency_tests accepts 1 (minimum valid value)
+        let result =
+            SpeedTestCLIOptions::try_parse_from(vec!["cfspeedtest", "--nr-latency-tests", "1"]);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().nr_latency_tests, 1);
+
+        // Test that nr_latency_tests accepts 999 (maximum valid value)
+        let result =
+            SpeedTestCLIOptions::try_parse_from(vec!["cfspeedtest", "--nr-latency-tests", "999"]);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().nr_latency_tests, 999);
+
+        // Test that nr_latency_tests rejects 1000
+        let result =
+            SpeedTestCLIOptions::try_parse_from(vec!["cfspeedtest", "--nr-latency-tests", "1000"]);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("1000 is not in 1..1000"));
+    }
 }
