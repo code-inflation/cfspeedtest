@@ -69,10 +69,8 @@ impl PayloadSize {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct Metadata {
-    pub city: String,
     pub country: String,
     pub ip: String,
-    pub asn: String,
     pub colo: String,
 }
 
@@ -80,8 +78,8 @@ impl Display for Metadata {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "City: {}\nCountry: {}\nIp: {}\nAsn: {}\nColo: {}",
-            self.city, self.country, self.ip, self.asn, self.colo
+            "Country: {}\nIp: {}\nColo: {}",
+            self.country, self.ip, self.colo
         )
     }
 }
@@ -326,27 +324,49 @@ fn print_current_speed(
 }
 
 pub fn fetch_metadata(client: &Client) -> Result<Metadata, reqwest::Error> {
-    let url = &format!("{}/{}{}", BASE_URL, DOWNLOAD_URL, 0);
-    let headers = client.get(url).send()?.headers().to_owned();
+    const TRACE_URL: &str = "https://speed.cloudflare.com/cdn-cgi/trace";
+
+    let response = client.get(TRACE_URL).send()?;
+    let body = response.text()?;
+
+    // Parse key=value pairs from response body
+    let trace_data = parse_trace_response(&body);
+
     Ok(Metadata {
-        city: extract_header_value(&headers, "cf-meta-city", "City N/A"),
-        country: extract_header_value(&headers, "cf-meta-country", "Country N/A"),
-        ip: extract_header_value(&headers, "cf-meta-ip", "IP N/A"),
-        asn: extract_header_value(&headers, "cf-meta-asn", "ASN N/A"),
-        colo: extract_header_value(&headers, "cf-meta-colo", "Colo N/A"),
+        country: trace_data
+            .get("loc")
+            .unwrap_or(&"N/A".to_string())
+            .to_owned(),
+        ip: trace_data
+            .get("ip")
+            .unwrap_or(&"N/A".to_string())
+            .to_owned(),
+        colo: trace_data
+            .get("colo")
+            .unwrap_or(&"N/A".to_string())
+            .to_owned(),
     })
 }
 
-fn extract_header_value(
-    headers: &reqwest::header::HeaderMap,
-    header_name: &str,
-    na_value: &str,
-) -> String {
-    headers
-        .get(header_name)
-        .and_then(|value| value.to_str().ok())
-        .unwrap_or(na_value)
-        .to_owned()
+/// Parses the Cloudflare trace response body into a key-value map
+///
+/// The trace endpoint returns plain text in the format:
+/// key1=value1
+/// key2=value2
+///
+/// This function splits the response by newlines and then by '=' to create a HashMap
+fn parse_trace_response(body: &str) -> std::collections::HashMap<String, String> {
+    body.lines()
+        .filter_map(|line| {
+            let parts: Vec<&str> = line.splitn(2, '=').collect();
+            if parts.len() == 2 {
+                Some((parts[0].trim().to_string(), parts[1].trim().to_string()))
+            } else {
+                log::debug!("Skipping malformed trace line: {}", line);
+                None
+            }
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -505,5 +525,111 @@ mod tests {
 
         let result = fetch_metadata(&client);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_trace_response_valid() {
+        let body = "ip=178.197.211.5\ncolo=ZRH\nloc=CH\nts=1768250090.213\n";
+        let parsed = parse_trace_response(body);
+
+        assert_eq!(parsed.get("ip"), Some(&"178.197.211.5".to_string()));
+        assert_eq!(parsed.get("colo"), Some(&"ZRH".to_string()));
+        assert_eq!(parsed.get("loc"), Some(&"CH".to_string()));
+        assert_eq!(parsed.get("ts"), Some(&"1768250090.213".to_string()));
+    }
+
+    #[test]
+    fn test_parse_trace_response_empty() {
+        let body = "";
+        let parsed = parse_trace_response(body);
+        assert!(parsed.is_empty());
+    }
+
+    #[test]
+    fn test_parse_trace_response_malformed_lines() {
+        let body = "ip=178.197.211.5\nmalformed_line\ncolo=ZRH\n";
+        let parsed = parse_trace_response(body);
+
+        assert_eq!(parsed.get("ip"), Some(&"178.197.211.5".to_string()));
+        assert_eq!(parsed.get("colo"), Some(&"ZRH".to_string()));
+        assert_eq!(parsed.len(), 2); // malformed line should be skipped
+    }
+
+    #[test]
+    fn test_parse_trace_response_with_equals_in_value() {
+        let body = "key1=value1\nkey2=value=with=equals\n";
+        let parsed = parse_trace_response(body);
+
+        assert_eq!(parsed.get("key1"), Some(&"value1".to_string()));
+        assert_eq!(parsed.get("key2"), Some(&"value=with=equals".to_string()));
+    }
+
+    #[test]
+    #[ignore] // Remove #[ignore] to run in CI nightly pipeline
+    fn test_fetch_metadata_integration() {
+        // This test verifies that Cloudflare's trace endpoint returns the expected metadata fields.
+        // If this test starts failing, it means Cloudflare changed their API again.
+        let client = reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(10))
+            .build()
+            .expect("Failed to create HTTP client");
+
+        let result = fetch_metadata(&client);
+
+        assert!(
+            result.is_ok(),
+            "Failed to fetch metadata: {:?}",
+            result.err()
+        );
+        let metadata = result.unwrap();
+
+        // These fields MUST be populated (not "N/A") for the API to be working correctly
+        assert_ne!(metadata.ip, "N/A", "IP field should be populated");
+        assert_ne!(
+            metadata.colo, "N/A",
+            "Colo field should be populated (CRITICAL: Cloudflare API may have changed)"
+        );
+        assert_ne!(
+            metadata.country, "N/A",
+            "Country field should be populated (CRITICAL: Cloudflare API may have changed)"
+        );
+
+        // Validate format: IP should be a valid IP address format
+        assert!(
+            metadata.ip.contains('.') || metadata.ip.contains(':'),
+            "IP should be in valid format (IPv4 or IPv6): {}",
+            metadata.ip
+        );
+
+        // Validate format: Colo should be 3 uppercase letters (IATA code)
+        assert_eq!(
+            metadata.colo.len(),
+            3,
+            "Colo should be 3-letter IATA code: {}",
+            metadata.colo
+        );
+        assert!(
+            metadata.colo.chars().all(|c| c.is_ascii_uppercase()),
+            "Colo should be uppercase letters: {}",
+            metadata.colo
+        );
+
+        // Validate format: Country should be 2 uppercase letters (ISO code)
+        assert_eq!(
+            metadata.country.len(),
+            2,
+            "Country should be 2-letter ISO code: {}",
+            metadata.country
+        );
+        assert!(
+            metadata.country.chars().all(|c| c.is_ascii_uppercase()),
+            "Country should be uppercase letters: {}",
+            metadata.country
+        );
+
+        eprintln!(
+            "✓ Metadata integration test passed: ip={}, colo={}, country={}",
+            metadata.ip, metadata.colo, metadata.country
+        );
     }
 }
