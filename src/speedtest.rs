@@ -565,7 +565,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // Remove #[ignore] to run in CI nightly pipeline
     fn test_fetch_metadata_integration() {
         // This test verifies that Cloudflare's trace endpoint returns the expected metadata fields.
         // If this test starts failing, it means Cloudflare changed their API again.
