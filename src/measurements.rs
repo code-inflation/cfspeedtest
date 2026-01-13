@@ -344,10 +344,8 @@ mod tests {
             latency_measurements: vec![9.0, 10.0, 11.0],
         };
         let metadata = Metadata {
-            city: "City".to_string(),
             country: "Country".to_string(),
             ip: "127.0.0.1".to_string(),
-            asn: "ASN".to_string(),
             colo: "ABC".to_string(),
         };
 
@@ -357,20 +355,12 @@ mod tests {
         let metadata_value = output.get("metadata").expect("metadata missing");
         let metadata_obj = metadata_value.as_object().expect("metadata not an object");
         assert_eq!(
-            metadata_obj.get("city").and_then(|v| v.as_str()),
-            Some("City")
-        );
-        assert_eq!(
             metadata_obj.get("country").and_then(|v| v.as_str()),
             Some("Country")
         );
         assert_eq!(
             metadata_obj.get("ip").and_then(|v| v.as_str()),
             Some("127.0.0.1")
-        );
-        assert_eq!(
-            metadata_obj.get("asn").and_then(|v| v.as_str()),
-            Some("ASN")
         );
         assert_eq!(
             metadata_obj.get("colo").and_then(|v| v.as_str()),
