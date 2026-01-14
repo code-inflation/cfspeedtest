@@ -4,7 +4,7 @@ use cfspeedtest::OutputFormat;
 fn main() {
     println!("Testing download speed with 10MB of payload");
 
-    let download_speed = test_download(
+    let (download_speed, _) = test_download(
         &reqwest::blocking::Client::new(),
         10_000_000,
         OutputFormat::None, // don't write to stdout while running the test
