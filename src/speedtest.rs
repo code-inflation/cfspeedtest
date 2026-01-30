@@ -2,12 +2,12 @@ use crate::measurements::format_bytes;
 use crate::measurements::log_measurements;
 use crate::measurements::LatencyMeasurement;
 use crate::measurements::Measurement;
-use crate::progress::print_progress;
+use crate::progress::Progress;
 use crate::OutputFormat;
 use crate::SpeedTestCLIOptions;
 use log;
 use regex::Regex;
-use reqwest::{blocking::Client, StatusCode};
+use reqwest::blocking::Client;
 use serde::Serialize;
 use std::{
     fmt::Display,
@@ -158,18 +158,29 @@ pub fn run_latency_test(
     output_format: OutputFormat,
 ) -> (Vec<f64>, f64) {
     let mut measurements: Vec<f64> = Vec::new();
+    let progress = if output_format == OutputFormat::StdOut {
+        Some(Progress::new("latency test", nr_latency_tests))
+    } else {
+        None
+    };
+
     for i in 0..nr_latency_tests {
-        if output_format == OutputFormat::StdOut {
-            print_progress("latency test", i + 1, nr_latency_tests);
+        if let Some(ref pb) = progress {
+            pb.set_position(i + 1);
         }
         let latency = test_latency(client);
         measurements.push(latency);
     }
+
+    if let Some(pb) = progress {
+        pb.finish();
+    }
+
     let avg_latency = measurements.iter().sum::<f64>() / measurements.len() as f64;
 
     if output_format == OutputFormat::StdOut {
         println!(
-            "\nAvg GET request latency {avg_latency:.2} ms (RTT excluding server processing time)\n"
+            "Avg GET request latency {avg_latency:.2} ms (RTT excluding server processing time)\n"
         );
     }
     (measurements, avg_latency)
@@ -220,7 +231,7 @@ const TIME_THRESHOLD: Duration = Duration::from_secs(5);
 
 pub fn run_tests(
     client: &Client,
-    test_fn: fn(&Client, usize, OutputFormat) -> f64,
+    test_fn: fn(&Client, usize, OutputFormat) -> (f64, Duration),
     test_type: TestType,
     payload_sizes: Vec<usize>,
     nr_tests: u32,
@@ -231,29 +242,41 @@ pub fn run_tests(
     for payload_size in payload_sizes {
         log::debug!("running tests for payload_size {payload_size}");
         let start = Instant::now();
+
+        let progress = if output_format == OutputFormat::StdOut {
+            Some(Progress::new(
+                &format!("{:?} {:<5}", test_type, format_bytes(payload_size)),
+                nr_tests,
+            ))
+        } else {
+            None
+        };
+
         for i in 0..nr_tests {
-            if output_format == OutputFormat::StdOut {
-                print_progress(
-                    &format!("{:?} {:<5}", test_type, format_bytes(payload_size)),
-                    i,
-                    nr_tests,
+            let (mbit, duration) = test_fn(client, payload_size, output_format);
+
+            if let Some(ref pb) = progress {
+                pb.set_position(i + 1);
+                let message = format!(
+                    "  {:>6.2} mbit/s | {:>5} in {:>4}ms",
+                    mbit,
+                    format_bytes(payload_size),
+                    duration.as_millis()
                 );
+                pb.set_message(message);
             }
-            let mbit = test_fn(client, payload_size, output_format);
             measurements.push(Measurement {
                 test_type,
                 payload_size,
                 mbit,
             });
         }
-        if output_format == OutputFormat::StdOut {
-            print_progress(
-                &format!("{:?} {:<5}", test_type, format_bytes(payload_size)),
-                nr_tests,
-                nr_tests,
-            );
+
+        if let Some(pb) = progress {
+            pb.finish();
             println!()
         }
+
         let duration = start.elapsed();
 
         // only check TIME_THRESHOLD if dynamic max payload sizing is not disabled
@@ -265,62 +288,43 @@ pub fn run_tests(
     measurements
 }
 
-pub fn test_upload(client: &Client, payload_size_bytes: usize, output_format: OutputFormat) -> f64 {
+pub fn test_upload(
+    client: &Client,
+    payload_size_bytes: usize,
+    _output_format: OutputFormat,
+) -> (f64, Duration) {
     let url = &format!("{BASE_URL}/{UPLOAD_URL}");
     let payload: Vec<u8> = vec![1; payload_size_bytes];
     let req_builder = client.post(url).body(payload);
-    let (mut response, status_code, mbits, duration) = {
+    let (mut response, mbits, duration) = {
         let start = Instant::now();
         let response = req_builder.send().expect("failed to get response");
-        let status_code = response.status();
         let duration = start.elapsed();
         let mbits = (payload_size_bytes as f64 * 8.0 / 1_000_000.0) / duration.as_secs_f64();
-        (response, status_code, mbits, duration)
+        (response, mbits, duration)
     };
     // Drain response after timing so we don't skew upload measurement.
     let _ = std::io::copy(&mut response, &mut std::io::sink());
-    if output_format == OutputFormat::StdOut {
-        print_current_speed(mbits, duration, status_code, payload_size_bytes);
-    }
-    mbits
+    (mbits, duration)
 }
 
 pub fn test_download(
     client: &Client,
     payload_size_bytes: usize,
-    output_format: OutputFormat,
-) -> f64 {
+    _output_format: OutputFormat,
+) -> (f64, Duration) {
     let url = &format!("{BASE_URL}/{DOWNLOAD_URL}{payload_size_bytes}");
     let req_builder = client.get(url);
-    let (status_code, mbits, duration) = {
+    let (mbits, duration) = {
         let start = Instant::now();
         let mut response = req_builder.send().expect("failed to get response");
-        let status_code = response.status();
         // Stream the body to avoid buffering the full payload in memory.
         let _ = std::io::copy(&mut response, &mut std::io::sink());
         let duration = start.elapsed();
         let mbits = (payload_size_bytes as f64 * 8.0 / 1_000_000.0) / duration.as_secs_f64();
-        (status_code, mbits, duration)
+        (mbits, duration)
     };
-    if output_format == OutputFormat::StdOut {
-        print_current_speed(mbits, duration, status_code, payload_size_bytes);
-    }
-    mbits
-}
-
-fn print_current_speed(
-    mbits: f64,
-    duration: Duration,
-    status_code: StatusCode,
-    payload_size_bytes: usize,
-) {
-    print!(
-        "  {:>6.2} mbit/s | {:>5} in {:>4}ms -> status: {}  ",
-        mbits,
-        format_bytes(payload_size_bytes),
-        duration.as_millis(),
-        status_code
-    );
+    (mbits, duration)
 }
 
 pub fn fetch_metadata(client: &Client) -> Result<Metadata, reqwest::Error> {
