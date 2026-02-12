@@ -1,26 +1,28 @@
-use cfspeedtest::speedtest::speed_test;
-use cfspeedtest::speedtest::PayloadSize;
-use cfspeedtest::OutputFormat;
-use cfspeedtest::SpeedTestCLIOptions;
+use cfspeedtest::engine::types::{PayloadSize, SpeedTestConfig};
+use cfspeedtest::{build_client, speedtest};
 
-fn main() {
-    // define speedtest options
-    let options = SpeedTestCLIOptions {
-        output_format: OutputFormat::None, // don't write to stdout
-        ipv4: None,                        // don't force ipv4 usage
-        ipv6: None,                        // don't force ipv6 usage
-        verbose: false,
-        upload_only: false,
-        download_only: false,
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    let client = build_client(None)?;
+
+    let config = SpeedTestConfig {
         nr_tests: 5,
         nr_latency_tests: 20,
         max_payload_size: PayloadSize::M10,
-        disable_dynamic_max_payload_size: false,
-        completion: None,
+        ..Default::default()
     };
 
-    let measurements = speed_test(reqwest::blocking::Client::new(), options);
-    measurements
-        .iter()
-        .for_each(|measurement| println!("{measurement}"));
+    let result = speedtest(&client, &config).await?;
+
+    if let Some(ref dl) = result.download {
+        println!("Download: {:.1} Mbps", dl.overall_mbps);
+    }
+    if let Some(ref ul) = result.upload {
+        println!("Upload: {:.1} Mbps", ul.overall_mbps);
+    }
+    if let Some(ref lat) = result.latency {
+        println!("Latency: {:.1} ms", lat.avg_ms);
+    }
+
+    Ok(())
 }

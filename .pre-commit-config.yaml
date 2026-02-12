@@ -14,8 +14,3 @@ repos:
       stages: [pre-commit]
     - id: detect-private-key
       stages: [pre-commit]
-  - repo: https://github.com/crate-ci/typos
-    rev: v1.16.20
-    hooks:
-    - id: typos
-      stages: [pre-commit]

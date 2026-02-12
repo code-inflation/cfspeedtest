@@ -1,19 +1,21 @@
-use cfspeedtest::speedtest::run_latency_test;
-use cfspeedtest::OutputFormat;
+use cfspeedtest::build_client;
+use cfspeedtest::engine::latency::test_latency;
 
-fn main() {
-    println!("Testing latency");
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    println!("Testing latency (25 samples)");
 
-    let (latency_results, avg_latency) = run_latency_test(
-        &reqwest::blocking::Client::new(),
-        25,
-        OutputFormat::None, // don't write to stdout while running the test
-    );
+    let client = build_client(None)?;
+    let mut samples = Vec::new();
 
-    println!("average latancy in ms: {avg_latency}");
-
-    println!("all latency test results");
-    for latency_result in latency_results {
-        println!("latency in ms: {latency_result}");
+    for i in 0..25 {
+        let rtt_ms = test_latency(&client).await?;
+        println!("  Test {}: {rtt_ms:.1} ms", i + 1);
+        samples.push(rtt_ms);
     }
+
+    let avg = samples.iter().sum::<f64>() / samples.len() as f64;
+    println!("Average latency: {avg:.1} ms");
+
+    Ok(())
 }

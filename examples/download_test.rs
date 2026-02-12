@@ -1,14 +1,15 @@
-use cfspeedtest::speedtest::test_download;
-use cfspeedtest::OutputFormat;
+use cfspeedtest::build_client;
+use cfspeedtest::engine::download::test_download;
+use cfspeedtest::engine::types::PayloadSize;
 
-fn main() {
-    println!("Testing download speed with 10MB of payload");
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    println!("Testing download speed with 10MB payload");
 
-    let download_speed = test_download(
-        &reqwest::blocking::Client::new(),
-        10_000_000,
-        OutputFormat::None, // don't write to stdout while running the test
-    );
+    let client = build_client(None)?;
+    let (mbps, elapsed) = test_download(&client, PayloadSize::M10, None).await?;
 
-    println!("download speed in mbit: {download_speed}")
+    println!("Download speed: {mbps:.1} Mbps (took {elapsed:.2?})");
+
+    Ok(())
 }
