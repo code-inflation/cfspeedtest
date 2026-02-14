@@ -516,14 +516,15 @@ fn test_upload_with_base_url(
     };
 
     let status_code = response.status();
+    let retry_after = parse_retry_after(response.headers().get(RETRY_AFTER));
+    // Measure upload duration once response headers are available.
+    let duration = start.elapsed();
     // Drain response after timing so we don't skew upload measurement.
     let _ = std::io::copy(&mut response, &mut std::io::sink());
-    let duration = start.elapsed();
     if !status_code.is_success() {
         if output_format == OutputFormat::StdOut {
             print_skipped_sample(duration, status_code, payload_size_bytes);
         }
-        let retry_after = parse_retry_after(response.headers().get(RETRY_AFTER));
         return if is_retryable_status(status_code) {
             SampleOutcome::RetryableFailure {
                 duration,
@@ -818,7 +819,14 @@ mod tests {
                             response.reason,
                             response.body.len(),
                         );
+                        let mut delay_before_body = Duration::ZERO;
                         for (header, value) in &response.headers {
+                            if header.eq_ignore_ascii_case("X-Test-Delay-Ms") {
+                                if let Ok(ms) = value.parse::<u64>() {
+                                    delay_before_body = Duration::from_millis(ms);
+                                }
+                                continue;
+                            }
                             response_head.push_str(&format!("{header}: {value}\r\n"));
                         }
                         response_head.push_str("\r\n");
@@ -826,6 +834,9 @@ mod tests {
                         stream
                             .write_all(response_head.as_bytes())
                             .expect("failed to write mock response head");
+                        if !delay_before_body.is_zero() {
+                            thread::sleep(delay_before_body);
+                        }
                         if !response.body.is_empty() {
                             stream
                                 .write_all(response.body.as_bytes())
@@ -1159,6 +1170,85 @@ mod tests {
 
         handle.join().expect("mock server thread panicked");
         assert_eq!(served_counter.load(AtomicOrdering::SeqCst), 1);
+    }
+
+    #[test]
+    fn test_upload_duration_excludes_delayed_response_body() {
+        let responses = vec![MockHttpResponse {
+            status_code: 200,
+            reason: "OK",
+            headers: vec![("X-Test-Delay-Ms", "300")],
+            body: "ok",
+        }];
+        let (base_url, served_counter, handle) = spawn_mock_http_server(responses);
+        let client = reqwest::blocking::Client::builder()
+            .timeout(Duration::from_secs(2))
+            .build()
+            .expect("failed to build test client");
+
+        let wall_start = Instant::now();
+        let outcome = test_upload_with_base_url(&client, 100_000, OutputFormat::None, &base_url);
+        let wall_elapsed = wall_start.elapsed();
+
+        handle.join().expect("mock server thread panicked");
+        assert_eq!(served_counter.load(AtomicOrdering::SeqCst), 1);
+
+        match outcome {
+            SampleOutcome::Success { duration, .. } => {
+                assert!(
+                    duration < Duration::from_millis(200),
+                    "upload duration should stop before delayed response drain: {duration:?}"
+                );
+                assert!(
+                    wall_elapsed >= Duration::from_millis(250),
+                    "overall call should include delayed body drain: {wall_elapsed:?}"
+                );
+            }
+            other => panic!("expected upload success, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_upload_retryable_failure_parses_retry_after_without_drain_skew() {
+        let responses = vec![MockHttpResponse {
+            status_code: 429,
+            reason: "Too Many Requests",
+            headers: vec![("Retry-After", "1"), ("X-Test-Delay-Ms", "300")],
+            body: "retry later",
+        }];
+        let (base_url, served_counter, handle) = spawn_mock_http_server(responses);
+        let client = reqwest::blocking::Client::builder()
+            .timeout(Duration::from_secs(2))
+            .build()
+            .expect("failed to build test client");
+
+        let wall_start = Instant::now();
+        let outcome = test_upload_with_base_url(&client, 100_000, OutputFormat::None, &base_url);
+        let wall_elapsed = wall_start.elapsed();
+
+        handle.join().expect("mock server thread panicked");
+        assert_eq!(served_counter.load(AtomicOrdering::SeqCst), 1);
+
+        match outcome {
+            SampleOutcome::RetryableFailure {
+                duration,
+                status_code,
+                retry_after,
+                ..
+            } => {
+                assert!(
+                    duration < Duration::from_millis(200),
+                    "retryable failure duration should stop before delayed body drain: {duration:?}"
+                );
+                assert_eq!(status_code, Some(StatusCode::TOO_MANY_REQUESTS));
+                assert_eq!(retry_after, Some(Duration::from_secs(1)));
+                assert!(
+                    wall_elapsed >= Duration::from_millis(250),
+                    "overall call should include delayed body drain: {wall_elapsed:?}"
+                );
+            }
+            other => panic!("expected retryable upload failure, got {other:?}"),
+        }
     }
 
     #[test]
