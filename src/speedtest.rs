@@ -6,12 +6,14 @@ use crate::measurements::PayloadAttemptStats;
 use crate::progress::print_progress;
 use crate::OutputFormat;
 use crate::SpeedTestCLIOptions;
+use jiff::Zoned;
 use log;
 use regex::Regex;
 use reqwest::{blocking::Client, header::RETRY_AFTER, StatusCode};
 use serde::Serialize;
 use std::{
     fmt::Display,
+    io::Write,
     sync::atomic::{AtomicBool, Ordering},
     thread,
     time::{Duration, Instant},
@@ -661,6 +663,7 @@ fn print_current_speed(mbits: f64, duration: Duration, payload_size_bytes: usize
         format_bytes(payload_size_bytes),
         duration.as_millis(),
     );
+    flush_stdout();
 }
 
 fn print_skipped_sample(duration: Duration, status_code: StatusCode, payload_size_bytes: usize) {
@@ -671,15 +674,17 @@ fn print_skipped_sample(duration: Duration, status_code: StatusCode, payload_siz
         duration.as_millis(),
         status_code
     );
+    flush_stdout();
 }
 
 fn print_retry_notice(delay: Duration, attempt: u32, max_attempts: u32) {
+    let delay_display = format_retry_delay(delay);
+    let eta_display = format_retry_eta(delay);
     print!(
-        " retrying in {}ms ({}/{})  ",
-        delay.as_millis(),
-        attempt,
-        max_attempts
+        " retrying in {}{} ({}/{})  ",
+        delay_display, eta_display, attempt, max_attempts
     );
+    flush_stdout();
 }
 
 fn print_transport_failure(duration: Duration, payload_size_bytes: usize, error: &reqwest::Error) {
@@ -690,6 +695,35 @@ fn print_transport_failure(duration: Duration, payload_size_bytes: usize, error:
         duration.as_millis(),
         error
     );
+    flush_stdout();
+}
+
+fn format_retry_delay(delay: Duration) -> String {
+    let total_seconds = delay.as_secs();
+    if total_seconds == 0 {
+        return format!("{}ms", delay.as_millis());
+    }
+    if total_seconds < 60 {
+        return format!("{total_seconds}s");
+    }
+    if total_seconds < 3600 {
+        return format!("{}m {:02}s", total_seconds / 60, total_seconds % 60);
+    }
+    let hours = total_seconds / 3600;
+    let minutes = (total_seconds % 3600) / 60;
+    format!("{hours}h {minutes:02}m")
+}
+
+fn format_retry_eta(delay: Duration) -> String {
+    if delay.as_secs() < 60 {
+        return String::new();
+    }
+    let eta = Zoned::now().saturating_add(delay);
+    format!(" (until {})", eta.strftime("%H:%M:%S %Z"))
+}
+
+fn flush_stdout() {
+    let _ = std::io::stdout().flush();
 }
 
 pub fn fetch_metadata(client: &Client) -> Result<Metadata, reqwest::Error> {
