@@ -26,6 +26,13 @@ const MAX_ATTEMPT_FACTOR: u32 = 4;
 const RETRY_BASE_BACKOFF: Duration = Duration::from_millis(250);
 const RETRY_MAX_BACKOFF: Duration = Duration::from_secs(3);
 
+#[derive(Clone, Copy, Debug)]
+struct RetryRunOptions {
+    nr_tests: u32,
+    output_format: OutputFormat,
+    disable_dynamic_max_payload_size: bool,
+}
+
 #[derive(Clone, Copy, Debug, Hash, Serialize, Eq, PartialEq)]
 pub enum TestType {
     Download,
@@ -300,13 +307,16 @@ pub fn run_tests_with_retries(
     output_format: OutputFormat,
     disable_dynamic_max_payload_size: bool,
 ) -> (Vec<Measurement>, Vec<PayloadAttemptStats>) {
+    let options = RetryRunOptions {
+        nr_tests,
+        output_format,
+        disable_dynamic_max_payload_size,
+    };
     run_tests_with_sleep(
         client,
         test_type,
         payload_sizes,
-        nr_tests,
-        output_format,
-        disable_dynamic_max_payload_size,
+        options,
         BASE_URL,
         thread::sleep,
     )
@@ -316,9 +326,7 @@ fn run_tests_with_sleep<S>(
     client: &Client,
     test_type: TestType,
     payload_sizes: Vec<usize>,
-    nr_tests: u32,
-    output_format: OutputFormat,
-    disable_dynamic_max_payload_size: bool,
+    options: RetryRunOptions,
     base_url: &str,
     sleep_fn: S,
 ) -> (Vec<Measurement>, Vec<PayloadAttemptStats>)
@@ -336,20 +344,26 @@ where
         let mut attempts = 0;
         let mut successes = 0;
         let mut skipped = 0;
-        let max_attempts = nr_tests.saturating_mul(MAX_ATTEMPT_FACTOR).max(nr_tests);
+        let max_attempts = options
+            .nr_tests
+            .saturating_mul(MAX_ATTEMPT_FACTOR)
+            .max(options.nr_tests);
 
-        while successes < nr_tests && attempts < max_attempts {
-            if output_format == OutputFormat::StdOut {
-                print_progress(&label, successes, nr_tests);
+        while successes < options.nr_tests && attempts < max_attempts {
+            if options.output_format == OutputFormat::StdOut {
+                print_progress(&label, successes, options.nr_tests);
             }
 
             attempts += 1;
             let sample_outcome = match test_type {
-                TestType::Download => {
-                    test_download_with_base_url(client, payload_size, output_format, base_url)
-                }
+                TestType::Download => test_download_with_base_url(
+                    client,
+                    payload_size,
+                    options.output_format,
+                    base_url,
+                ),
                 TestType::Upload => {
-                    test_upload_with_base_url(client, payload_size, output_format, base_url)
+                    test_upload_with_base_url(client, payload_size, options.output_format, base_url)
                 }
             };
 
@@ -390,7 +404,7 @@ where
                             duration.as_millis(),
                             delay.as_millis(),
                         );
-                        if output_format == OutputFormat::StdOut {
+                        if options.output_format == OutputFormat::StdOut {
                             print_retry_notice(delay, attempts, max_attempts);
                         }
                         sleep_fn(delay);
@@ -415,8 +429,8 @@ where
             }
         }
 
-        if output_format == OutputFormat::StdOut {
-            print_progress(&label, successes, nr_tests);
+        if options.output_format == OutputFormat::StdOut {
+            print_progress(&label, successes, options.nr_tests);
             println!();
         }
 
@@ -426,18 +440,19 @@ where
             attempts,
             successes,
             skipped,
-            target_successes: nr_tests,
+            target_successes: options.nr_tests,
         });
 
-        if successes < nr_tests {
+        if successes < options.nr_tests {
             log::warn!(
-                "{test_type:?} {} collected {successes}/{nr_tests} successful samples after {attempts} attempts",
+                "{test_type:?} {} collected {successes}/{} successful samples after {attempts} attempts",
                 format_bytes(payload_size),
+                options.nr_tests,
             );
         }
 
         let duration = start.elapsed();
-        if !disable_dynamic_max_payload_size && duration > TIME_THRESHOLD {
+        if !options.disable_dynamic_max_payload_size && duration > TIME_THRESHOLD {
             log::info!("Exceeded threshold");
             break;
         }
@@ -1017,9 +1032,11 @@ mod tests {
             &client,
             TestType::Download,
             vec![100_000],
-            1,
-            OutputFormat::None,
-            true,
+            RetryRunOptions {
+                nr_tests: 1,
+                output_format: OutputFormat::None,
+                disable_dynamic_max_payload_size: true,
+            },
             &base_url,
             |_| {},
         );
@@ -1054,9 +1071,11 @@ mod tests {
             &client,
             TestType::Download,
             vec![100_000],
-            2,
-            OutputFormat::None,
-            true,
+            RetryRunOptions {
+                nr_tests: 2,
+                output_format: OutputFormat::None,
+                disable_dynamic_max_payload_size: true,
+            },
             &base_url,
             |_| {},
         );
@@ -1089,9 +1108,11 @@ mod tests {
             &client,
             TestType::Download,
             vec![100_000],
-            2,
-            OutputFormat::None,
-            true,
+            RetryRunOptions {
+                nr_tests: 2,
+                output_format: OutputFormat::None,
+                disable_dynamic_max_payload_size: true,
+            },
             &base_url,
             |_| {},
         );
