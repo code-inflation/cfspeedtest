@@ -70,7 +70,11 @@ pub(crate) fn log_measurements(
 ) {
     if output_format == OutputFormat::StdOut {
         println!("\nSummary Statistics");
-        println!("Type     Payload |  min/max/avg in mbit/s | attempts/success/skipped");
+        if verbose {
+            println!("Type     Payload |  min/max/avg in mbit/s | attempts/success/skipped");
+        } else {
+            println!("Type     Payload |  min/max/avg in mbit/s");
+        }
     }
     let mut stat_measurements: Vec<StatMeasurement> = Vec::new();
     let mut test_types = measurements
@@ -189,9 +193,15 @@ fn log_measurements_by_test_type(
                 target_successes,
             });
             if output_format == OutputFormat::StdOut {
-                println!(
-                    "{fmt_test_type:<9} {formatted_payload:<7}|  min {min:<7.2} max {max:<7.2} avg {avg:<7.2} | {attempts:>3}/{successes:>3}/{skipped:>3}"
-                );
+                if verbose {
+                    println!(
+                        "{fmt_test_type:<9} {formatted_payload:<7}|  min {min:<7.2} max {max:<7.2} avg {avg:<7.2} | {attempts:>3}/{successes:>3}/{skipped:>3}"
+                    );
+                } else {
+                    println!(
+                        "{fmt_test_type:<9} {formatted_payload:<7}|  min {min:<7.2} max {max:<7.2} avg {avg:<7.2}"
+                    );
+                }
                 if successes < target_successes {
                     println!(
                         "                    insufficient samples: collected {successes}/{target_successes} successful runs"
@@ -218,9 +228,15 @@ fn log_measurements_by_test_type(
                 target_successes,
             });
             if output_format == OutputFormat::StdOut {
-                println!(
-                    "{fmt_test_type:<9} {formatted_payload:<7}|  min N/A     max N/A     avg N/A     | {attempts:>3}/{successes:>3}/{skipped:>3} (insufficient samples)"
-                );
+                if verbose {
+                    println!(
+                        "{fmt_test_type:<9} {formatted_payload:<7}|  min N/A     max N/A     avg N/A     | {attempts:>3}/{successes:>3}/{skipped:>3} (insufficient samples)"
+                    );
+                } else {
+                    println!(
+                        "{fmt_test_type:<9} {formatted_payload:<7}|  min N/A     max N/A     avg N/A     (insufficient samples)"
+                    );
+                }
             }
         }
     }
