@@ -525,7 +525,7 @@ fn test_upload_with_base_url(
 
     let mbits = (payload_size_bytes as f64 * 8.0 / 1_000_000.0) / duration.as_secs_f64();
     if output_format == OutputFormat::StdOut {
-        print_current_speed(mbits, duration, status_code, payload_size_bytes);
+        print_current_speed(mbits, duration, payload_size_bytes);
     }
     SampleOutcome::Success {
         mbits,
@@ -594,7 +594,7 @@ fn test_download_with_base_url(
 
     let mbits = (payload_size_bytes as f64 * 8.0 / 1_000_000.0) / duration.as_secs_f64();
     if output_format == OutputFormat::StdOut {
-        print_current_speed(mbits, duration, status_code, payload_size_bytes);
+        print_current_speed(mbits, duration, payload_size_bytes);
     }
     SampleOutcome::Success {
         mbits,
@@ -639,24 +639,18 @@ fn compute_retry_delay(attempt: u32, retry_after: Option<Duration>) -> Duration 
     Duration::from_millis(jittered_delay)
 }
 
-fn print_current_speed(
-    mbits: f64,
-    duration: Duration,
-    status_code: StatusCode,
-    payload_size_bytes: usize,
-) {
+fn print_current_speed(mbits: f64, duration: Duration, payload_size_bytes: usize) {
     print!(
-        "  {:>6.2} mbit/s | {:>5} in {:>4}ms -> status: {}  ",
+        "  {:>6.2} mbit/s | {:>5} in {:>4}ms  ",
         mbits,
         format_bytes(payload_size_bytes),
         duration.as_millis(),
-        status_code
     );
 }
 
 fn print_skipped_sample(duration: Duration, status_code: StatusCode, payload_size_bytes: usize) {
     print!(
-        "  {:>6} mbit/s | {:>5} in {:>4}ms -> status: {} (skipped)  ",
+        "  {:>6} mbit/s | {:>5} in {:>4}ms -> status: {}  ",
         "N/A",
         format_bytes(payload_size_bytes),
         duration.as_millis(),
@@ -675,7 +669,7 @@ fn print_retry_notice(delay: Duration, attempt: u32, max_attempts: u32) {
 
 fn print_transport_failure(duration: Duration, payload_size_bytes: usize, error: &reqwest::Error) {
     print!(
-        "  {:>6} mbit/s | {:>5} in {:>4}ms -> error: {} (skipped)  ",
+        "  {:>6} mbit/s | {:>5} in {:>4}ms -> error: {}  ",
         "N/A",
         format_bytes(payload_size_bytes),
         duration.as_millis(),
