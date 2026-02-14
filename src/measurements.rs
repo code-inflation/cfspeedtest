@@ -10,12 +10,16 @@ use std::{fmt::Display, io};
 struct StatMeasurement {
     test_type: TestType,
     payload_size: usize,
-    min: f64,
-    q1: f64,
-    median: f64,
-    q3: f64,
-    max: f64,
-    avg: f64,
+    min: Option<f64>,
+    q1: Option<f64>,
+    median: Option<f64>,
+    q3: Option<f64>,
+    max: Option<f64>,
+    avg: Option<f64>,
+    attempts: u32,
+    successes: u32,
+    skipped: u32,
+    target_successes: u32,
 }
 
 #[derive(Serialize)]
@@ -33,6 +37,16 @@ pub struct LatencyMeasurement {
     pub latency_measurements: Vec<f64>,
 }
 
+#[derive(Clone, Debug, Serialize)]
+pub struct PayloadAttemptStats {
+    pub test_type: TestType,
+    pub payload_size: usize,
+    pub attempts: u32,
+    pub successes: u32,
+    pub skipped: u32,
+    pub target_successes: u32,
+}
+
 impl Display for Measurement {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -47,6 +61,7 @@ impl Display for Measurement {
 
 pub(crate) fn log_measurements(
     measurements: &[Measurement],
+    payload_attempt_stats: &[PayloadAttemptStats],
     latency_measurement: Option<&LatencyMeasurement>,
     payload_sizes: Vec<usize>,
     verbose: bool,
@@ -55,23 +70,27 @@ pub(crate) fn log_measurements(
 ) {
     if output_format == OutputFormat::StdOut {
         println!("\nSummary Statistics");
-        println!("Type     Payload |  min/max/avg in mbit/s");
+        println!("Type     Payload |  min/max/avg in mbit/s | attempts/success/skipped");
     }
     let mut stat_measurements: Vec<StatMeasurement> = Vec::new();
-    measurements
+    let mut test_types = measurements
         .iter()
         .map(|m| m.test_type)
-        .collect::<IndexSet<TestType>>()
+        .collect::<IndexSet<TestType>>();
+    payload_attempt_stats
         .iter()
-        .for_each(|t| {
-            stat_measurements.extend(log_measurements_by_test_type(
-                measurements,
-                payload_sizes.clone(),
-                verbose,
-                output_format,
-                *t,
-            ))
-        });
+        .for_each(|stats| _ = test_types.insert(stats.test_type));
+
+    test_types.iter().for_each(|test_type| {
+        stat_measurements.extend(log_measurements_by_test_type(
+            measurements,
+            payload_attempt_stats,
+            payload_sizes.clone(),
+            verbose,
+            output_format,
+            *test_type,
+        ))
+    });
     match output_format {
         OutputFormat::Csv => {
             let mut wtr = csv::Writer::from_writer(io::stdout());
@@ -122,6 +141,7 @@ fn compose_output_json(
 
 fn log_measurements_by_test_type(
     measurements: &[Measurement],
+    payload_attempt_stats: &[PayloadAttemptStats],
     payload_sizes: Vec<usize>,
     verbose: bool,
     output_format: OutputFormat,
@@ -135,32 +155,72 @@ fn log_measurements_by_test_type(
             .filter(|m| m.payload_size == payload_size)
             .map(|m| m.mbit)
             .collect();
+        let payload_attempt_stat = payload_attempt_stats
+            .iter()
+            .find(|stats| stats.test_type == test_type && stats.payload_size == payload_size);
 
-        // check if there are any measurements for the current payload_size
-        // skip stats calculation if there are no measurements
+        if type_measurements.is_empty() && payload_attempt_stat.is_none() {
+            continue;
+        }
+
+        let attempts = payload_attempt_stat.map_or(0, |stats| stats.attempts);
+        let successes = payload_attempt_stat.map_or(0, |stats| stats.successes);
+        let skipped = payload_attempt_stat.map_or(0, |stats| stats.skipped);
+        let target_successes = payload_attempt_stat.map_or(0, |stats| stats.target_successes);
+
+        let formatted_payload = format_bytes(payload_size);
+        let fmt_test_type = format!("{test_type:?}");
+
         if !type_measurements.is_empty() {
             let (min, q1, median, q3, max, avg) = calc_stats(type_measurements).unwrap();
 
-            let formatted_payload = format_bytes(payload_size);
-            let fmt_test_type = format!("{test_type:?}");
             stat_measurements.push(StatMeasurement {
                 test_type,
                 payload_size,
-                min,
-                q1,
-                median,
-                q3,
-                max,
-                avg,
+                min: Some(min),
+                q1: Some(q1),
+                median: Some(median),
+                q3: Some(q3),
+                max: Some(max),
+                avg: Some(avg),
+                attempts,
+                successes,
+                skipped,
+                target_successes,
             });
             if output_format == OutputFormat::StdOut {
                 println!(
-                "{fmt_test_type:<9} {formatted_payload:<7}|  min {min:<7.2} max {max:<7.2} avg {avg:<7.2}"
-            );
+                    "{fmt_test_type:<9} {formatted_payload:<7}|  min {min:<7.2} max {max:<7.2} avg {avg:<7.2} | {attempts:>3}/{successes:>3}/{skipped:>3}"
+                );
+                if successes < target_successes {
+                    println!(
+                        "                    insufficient samples: collected {successes}/{target_successes} successful runs"
+                    );
+                }
                 if verbose {
                     let plot = boxplot::render_plot(min, q1, median, q3, max);
                     println!("{plot}\n");
                 }
+            }
+        } else {
+            stat_measurements.push(StatMeasurement {
+                test_type,
+                payload_size,
+                min: None,
+                q1: None,
+                median: None,
+                q3: None,
+                max: None,
+                avg: None,
+                attempts,
+                successes,
+                skipped,
+                target_successes,
+            });
+            if output_format == OutputFormat::StdOut {
+                println!(
+                    "{fmt_test_type:<9} {formatted_payload:<7}|  min N/A     max N/A     avg N/A     | {attempts:>3}/{successes:>3}/{skipped:>3} (insufficient samples)"
+                );
             }
         }
     }
@@ -330,12 +390,16 @@ mod tests {
         let stat_measurements = vec![StatMeasurement {
             test_type: TestType::Download,
             payload_size: 100_000,
-            min: 1.0,
-            q1: 1.5,
-            median: 2.0,
-            q3: 2.5,
-            max: 3.0,
-            avg: 2.0,
+            min: Some(1.0),
+            q1: Some(1.5),
+            median: Some(2.0),
+            q3: Some(2.5),
+            max: Some(3.0),
+            avg: Some(2.0),
+            attempts: 3,
+            successes: 3,
+            skipped: 0,
+            target_successes: 3,
         }];
         let latency = LatencyMeasurement {
             avg_latency_ms: 10.0,
