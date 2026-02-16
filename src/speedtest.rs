@@ -346,6 +346,7 @@ where
         let mut attempts = 0;
         let mut successes = 0;
         let mut skipped = 0;
+        let mut retry_streak = 0;
         let max_attempts = options
             .nr_tests
             .saturating_mul(MAX_ATTEMPT_FACTOR)
@@ -382,6 +383,7 @@ where
                         duration.as_millis(),
                     );
                     successes += 1;
+                    retry_streak = 0;
                     measurements.push(Measurement {
                         test_type,
                         payload_size,
@@ -395,8 +397,9 @@ where
                     reason,
                 } => {
                     skipped += 1;
+                    retry_streak += 1;
                     if attempts < max_attempts {
-                        let delay = compute_retry_delay(attempts, retry_after);
+                        let delay = compute_retry_delay(retry_streak, retry_after);
                         let status = status_code
                             .map(|code| code.to_string())
                             .unwrap_or_else(|| "transport error".to_string());
@@ -635,12 +638,12 @@ fn parse_retry_after(retry_after: Option<&reqwest::header::HeaderValue>) -> Opti
         .map(Duration::from_secs)
 }
 
-fn compute_retry_delay(attempt: u32, retry_after: Option<Duration>) -> Duration {
+fn compute_retry_delay(retry_count: u32, retry_after: Option<Duration>) -> Duration {
     if let Some(delay) = retry_after {
         return delay;
     }
 
-    let exponent = attempt.saturating_sub(1).min(4);
+    let exponent = retry_count.saturating_sub(1).min(4);
     let base_delay_ms = RETRY_BASE_BACKOFF.as_millis() as u64;
     let capped_delay_ms = RETRY_MAX_BACKOFF.as_millis() as u64;
     let delay_ms = base_delay_ms
@@ -648,7 +651,7 @@ fn compute_retry_delay(attempt: u32, retry_after: Option<Duration>) -> Duration 
         .min(capped_delay_ms);
 
     let jitter = delay_ms / 5;
-    let jittered_delay = if attempt.is_multiple_of(2) {
+    let jittered_delay = if retry_count.is_multiple_of(2) {
         delay_ms.saturating_add(jitter).min(capped_delay_ms)
     } else {
         delay_ms.saturating_sub(jitter)
@@ -779,7 +782,7 @@ mod tests {
     use std::io::{Read, Write};
     use std::net::TcpListener;
     use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
     use std::thread;
     use std::time::Duration;
 
@@ -1094,6 +1097,142 @@ mod tests {
 
         handle.join().expect("mock server thread panicked");
         assert_eq!(served_counter.load(AtomicOrdering::SeqCst), 2);
+    }
+
+    #[test]
+    fn test_run_tests_retry_delay_uses_retry_streak_not_total_attempts() {
+        let mut responses = (0..5)
+            .map(|_| MockHttpResponse {
+                status_code: 200,
+                reason: "OK",
+                headers: vec![],
+                body: "ok",
+            })
+            .collect::<Vec<_>>();
+        responses.push(MockHttpResponse {
+            status_code: 429,
+            reason: "Too Many Requests",
+            headers: vec![],
+            body: "",
+        });
+        responses.push(MockHttpResponse {
+            status_code: 200,
+            reason: "OK",
+            headers: vec![],
+            body: "ok",
+        });
+
+        let (base_url, served_counter, handle) = spawn_mock_http_server(responses);
+        let client = reqwest::blocking::Client::builder()
+            .timeout(Duration::from_secs(2))
+            .build()
+            .expect("failed to build test client");
+        let observed_delays = Arc::new(Mutex::new(Vec::<Duration>::new()));
+        let delay_sink = Arc::clone(&observed_delays);
+
+        let (measurements, payload_stats) = run_tests_with_sleep(
+            &client,
+            TestType::Download,
+            vec![100_000],
+            RetryRunOptions {
+                nr_tests: 6,
+                output_format: OutputFormat::None,
+                disable_dynamic_max_payload_size: true,
+            },
+            &base_url,
+            move |delay| {
+                delay_sink
+                    .lock()
+                    .expect("failed to lock delay sink")
+                    .push(delay);
+            },
+        );
+
+        assert_eq!(measurements.len(), 6);
+        assert_eq!(payload_stats.len(), 1);
+        assert_eq!(payload_stats[0].attempts, 7);
+        assert_eq!(payload_stats[0].successes, 6);
+        assert_eq!(payload_stats[0].skipped, 1);
+        assert_eq!(
+            *observed_delays
+                .lock()
+                .expect("failed to read observed delays"),
+            vec![compute_retry_delay(1, None)]
+        );
+
+        handle.join().expect("mock server thread panicked");
+        assert_eq!(served_counter.load(AtomicOrdering::SeqCst), 7);
+    }
+
+    #[test]
+    fn test_run_tests_retry_delay_resets_after_success() {
+        let responses = vec![
+            MockHttpResponse {
+                status_code: 429,
+                reason: "Too Many Requests",
+                headers: vec![],
+                body: "",
+            },
+            MockHttpResponse {
+                status_code: 200,
+                reason: "OK",
+                headers: vec![],
+                body: "ok",
+            },
+            MockHttpResponse {
+                status_code: 429,
+                reason: "Too Many Requests",
+                headers: vec![],
+                body: "",
+            },
+            MockHttpResponse {
+                status_code: 200,
+                reason: "OK",
+                headers: vec![],
+                body: "ok",
+            },
+        ];
+
+        let (base_url, served_counter, handle) = spawn_mock_http_server(responses);
+        let client = reqwest::blocking::Client::builder()
+            .timeout(Duration::from_secs(2))
+            .build()
+            .expect("failed to build test client");
+        let observed_delays = Arc::new(Mutex::new(Vec::<Duration>::new()));
+        let delay_sink = Arc::clone(&observed_delays);
+
+        let (measurements, payload_stats) = run_tests_with_sleep(
+            &client,
+            TestType::Download,
+            vec![100_000],
+            RetryRunOptions {
+                nr_tests: 2,
+                output_format: OutputFormat::None,
+                disable_dynamic_max_payload_size: true,
+            },
+            &base_url,
+            move |delay| {
+                delay_sink
+                    .lock()
+                    .expect("failed to lock delay sink")
+                    .push(delay);
+            },
+        );
+
+        assert_eq!(measurements.len(), 2);
+        assert_eq!(payload_stats.len(), 1);
+        assert_eq!(payload_stats[0].attempts, 4);
+        assert_eq!(payload_stats[0].successes, 2);
+        assert_eq!(payload_stats[0].skipped, 2);
+        assert_eq!(
+            *observed_delays
+                .lock()
+                .expect("failed to read observed delays"),
+            vec![compute_retry_delay(1, None), compute_retry_delay(1, None)]
+        );
+
+        handle.join().expect("mock server thread panicked");
+        assert_eq!(served_counter.load(AtomicOrdering::SeqCst), 4);
     }
 
     #[test]
