@@ -31,15 +31,18 @@ fn main() {
         client = reqwest::blocking::Client::builder()
             .local_address(ip.parse::<IpAddr>().expect("Invalid IPv4 address"))
             .timeout(std::time::Duration::from_secs(30))
+            .cookie_store(true)
             .build();
     } else if let Some(ref ip) = options.ipv6 {
         client = reqwest::blocking::Client::builder()
             .local_address(ip.parse::<IpAddr>().expect("Invalid IPv6 address"))
             .timeout(std::time::Duration::from_secs(30))
+            .cookie_store(true)
             .build();
     } else {
         client = reqwest::blocking::Client::builder()
             .timeout(std::time::Duration::from_secs(30))
+            .cookie_store(true)
             .build();
     }
     speed_test(
