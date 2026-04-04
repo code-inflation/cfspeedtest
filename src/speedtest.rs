@@ -14,7 +14,10 @@ use serde::Serialize;
 use std::{
     fmt::Display,
     io::Write,
-    sync::atomic::{AtomicBool, Ordering},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        LazyLock,
+    },
     thread,
     time::{Duration, Instant},
 };
@@ -23,6 +26,10 @@ const BASE_URL: &str = "https://speed.cloudflare.com";
 const DOWNLOAD_URL: &str = "__down?bytes=";
 const UPLOAD_URL: &str = "__up";
 static WARNED_NEGATIVE_LATENCY: AtomicBool = AtomicBool::new(false);
+static RE_CF_REQUEST_DURATION: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"cfRequestDuration;dur=([\d.]+)").unwrap());
+static RE_CFL4_RTT: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"[?&]rtt=(\d+)").unwrap());
 const TIME_THRESHOLD: Duration = Duration::from_secs(5);
 const MAX_ATTEMPT_FACTOR: u32 = 4;
 const RETRY_BASE_BACKOFF: Duration = Duration::from_millis(250);
@@ -192,6 +199,39 @@ pub fn run_latency_test(
         );
     }
     (measurements, avg_latency)
+}
+
+/// Parse latency from a Server-Timing header value.
+///
+/// Supports two formats:
+/// - Legacy: `cfRequestDuration;dur=<ms>` - returns `total_ms - server_duration`
+/// - Current: `cfL4;desc="?proto=TCP&rtt=<us>&..."` - returns `rtt` converted to ms
+///
+/// Returns `None` if the header doesn't match either format.
+fn parse_latency_from_server_timing(header: &str, total_ms: f64) -> Option<f64> {
+    // Try legacy format first: cfRequestDuration;dur=<milliseconds>
+    if let Some(caps) = RE_CF_REQUEST_DURATION.captures(header) {
+        if let Some(dur_match) = caps.get(1) {
+            if let Ok(server_duration) = dur_match.as_str().parse::<f64>() {
+                let latency = total_ms - server_duration;
+                return Some(if latency < 0.0 { 0.0 } else { latency });
+            }
+        }
+    }
+
+    // Try current format: cfL4;desc="?...&rtt=<microseconds>&..."
+    // Regex anchored with [?&] to avoid matching min_rtt= or rtt_var=
+    if header.contains("cfL4") {
+        if let Some(caps) = RE_CFL4_RTT.captures(header) {
+            if let Some(rtt_match) = caps.get(1) {
+                if let Ok(rtt_us) = rtt_match.as_str().parse::<f64>() {
+                    return Some(rtt_us / 1_000.0); // microseconds to milliseconds
+                }
+            }
+        }
+    }
+
+    None
 }
 
 pub fn test_latency(client: &Client) -> f64 {
