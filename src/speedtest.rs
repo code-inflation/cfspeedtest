@@ -1457,4 +1457,80 @@ mod tests {
             metadata.ip, metadata.colo, metadata.country
         );
     }
+
+    #[test]
+    fn test_parse_latency_from_legacy_header() {
+        // Old cfRequestDuration format
+        let header = "cfRequestDuration;dur=3.456";
+        let total_ms = 50.0;
+        let result = parse_latency_from_server_timing(header, total_ms);
+        assert!(result.is_some(), "Should parse legacy cfRequestDuration header");
+        let latency = result.unwrap();
+        // latency = total_ms - server_duration = 50.0 - 3.456 = 46.544
+        assert!((latency - 46.544).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_parse_latency_from_cfl4_header() {
+        // New cfL4 format - rtt is in microseconds
+        let header = r#"cfL4;desc="?proto=TCP&rtt=5003&min_rtt=4257&rtt_var=2477&sent=6&recv=6&lost=0""#;
+        let total_ms = 50.0;
+        let result = parse_latency_from_server_timing(header, total_ms);
+        assert!(result.is_some(), "Should parse cfL4 rtt header");
+        let latency = result.unwrap();
+        // rtt=5003 microseconds = 5.003 milliseconds
+        assert!((latency - 5.003).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_parse_latency_missing_header() {
+        let header = "some-unrelated;value=123";
+        let total_ms = 50.0;
+        let result = parse_latency_from_server_timing(header, total_ms);
+        assert!(result.is_none(), "Should return None for unrecognized header");
+    }
+
+    #[test]
+    fn test_parse_latency_prefers_legacy_over_cfl4() {
+        // If both are present (unlikely but defensive), prefer legacy
+        let header = "cfRequestDuration;dur=3.456, cfL4;desc=\"?proto=TCP&rtt=5003\"";
+        let total_ms = 50.0;
+        let result = parse_latency_from_server_timing(header, total_ms);
+        assert!(result.is_some());
+        let latency = result.unwrap();
+        assert!((latency - 46.544).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_parse_latency_cfl4_zero_rtt() {
+        let header = r#"cfL4;desc="?proto=TCP&rtt=0&min_rtt=0""#;
+        let total_ms = 50.0;
+        let result = parse_latency_from_server_timing(header, total_ms);
+        assert!(result.is_some());
+        assert!((result.unwrap() - 0.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_parse_latency_negative_clamp() {
+        // Legacy header where server processing > total RTT (clock skew)
+        let header = "cfRequestDuration;dur=100.0";
+        let total_ms = 50.0;
+        let result = parse_latency_from_server_timing(header, total_ms);
+        assert!(result.is_some());
+        // Should clamp to 0, not return negative
+        assert!((result.unwrap() - 0.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_parse_latency_cfl4_does_not_match_min_rtt() {
+        // Regression: rtt= regex must not match min_rtt= or rtt_var=
+        // Header with min_rtt before rtt - if regex is naive, it grabs min_rtt's value
+        let header = r#"cfL4;desc="?proto=TCP&min_rtt=4257&rtt_var=2477&rtt=5003&sent=6""#;
+        let total_ms = 50.0;
+        let result = parse_latency_from_server_timing(header, total_ms);
+        assert!(result.is_some());
+        let latency = result.unwrap();
+        // Must match rtt=5003, NOT min_rtt=4257
+        assert!((latency - 5.003).abs() < 0.001);
+    }
 }
