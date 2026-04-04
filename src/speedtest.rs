@@ -14,10 +14,7 @@ use serde::Serialize;
 use std::{
     fmt::Display,
     io::Write,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        LazyLock,
-    },
+    sync::LazyLock,
     thread,
     time::{Duration, Instant},
 };
@@ -25,7 +22,6 @@ use std::{
 const BASE_URL: &str = "https://speed.cloudflare.com";
 const DOWNLOAD_URL: &str = "__down?bytes=";
 const UPLOAD_URL: &str = "__up";
-static WARNED_NEGATIVE_LATENCY: AtomicBool = AtomicBool::new(false);
 static RE_CF_REQUEST_DURATION: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"cfRequestDuration;dur=([\d.]+)").unwrap());
 static RE_CFL4_RTT: LazyLock<Regex> =
@@ -191,12 +187,14 @@ pub fn run_latency_test(
         let latency = test_latency(client);
         measurements.push(latency);
     }
-    let avg_latency = measurements.iter().sum::<f64>() / measurements.len() as f64;
+    let avg_latency = if measurements.is_empty() {
+        0.0
+    } else {
+        measurements.iter().sum::<f64>() / measurements.len() as f64
+    };
 
     if output_format == OutputFormat::StdOut {
-        println!(
-            "\nAvg GET request latency {avg_latency:.2} ms (RTT excluding server processing time)\n"
-        );
+        println!("\nAvg GET request latency {avg_latency:.2} ms\n");
     }
     (measurements, avg_latency)
 }
@@ -234,45 +232,64 @@ fn parse_latency_from_server_timing(header: &str, total_ms: f64) -> Option<f64> 
     None
 }
 
-pub fn test_latency(client: &Client) -> f64 {
+/// Internal: attempt a single latency measurement, returning None on failure.
+fn try_test_latency(client: &Client) -> Option<f64> {
     let url = &format!("{}/{}{}", BASE_URL, DOWNLOAD_URL, 0);
     let req_builder = client.get(url);
 
     let start = Instant::now();
-    let mut response = req_builder.send().expect("failed to get response");
+    let mut response = match req_builder.send() {
+        Ok(resp) => resp,
+        Err(e) => {
+            log::debug!("Latency test request failed: {e}");
+            return None;
+        }
+    };
     let _status_code = response.status();
-    // Drain body to complete the request; ignore errors.
     let _ = std::io::copy(&mut response, &mut std::io::sink());
     let total_ms = start.elapsed().as_secs_f64() * 1_000.0;
 
-    let re = Regex::new(r"cfRequestDuration;dur=([\d.]+)").unwrap();
     let server_timing = response
         .headers()
         .get("Server-Timing")
-        .expect("No Server-Timing in response header")
-        .to_str()
-        .unwrap();
-    let cf_req_duration: f64 = re
-        .captures(server_timing)
-        .unwrap()
-        .get(1)
-        .unwrap()
-        .as_str()
-        .parse()
-        .unwrap();
-    let mut req_latency = total_ms - cf_req_duration;
-    log::debug!(
-        "latency debug: total_ms={total_ms:.3} cf_req_duration_ms={cf_req_duration:.3} req_latency_total={req_latency:.3} server_timing={server_timing}"
-    );
-    if req_latency < 0.0 {
-        if !WARNED_NEGATIVE_LATENCY.swap(true, Ordering::Relaxed) {
-            log::warn!(
-                "negative latency after server timing subtraction; clamping to 0.0 (total_ms={total_ms:.3} cf_req_duration_ms={cf_req_duration:.3})"
-            );
+        .and_then(|v| v.to_str().ok());
+
+    match server_timing {
+        Some(header) => {
+            match parse_latency_from_server_timing(header, total_ms) {
+                Some(latency) => Some(latency),
+                None => {
+                    log::warn!(
+                        "Server-Timing header unrecognized (not cfRequestDuration or cfL4). \
+                         Falling back to raw RTT ({total_ms:.2}ms)"
+                    );
+                    Some(total_ms)
+                }
+            }
         }
-        req_latency = 0.0
+        None => {
+            log::warn!(
+                "No Server-Timing header in response. \
+                 Falling back to raw RTT ({total_ms:.2}ms)"
+            );
+            Some(total_ms)
+        }
     }
-    req_latency
+}
+
+/// Measure a single GET request latency in milliseconds.
+///
+/// Returns 0.0 if the request fails entirely (connection refused, timeout, etc.).
+/// Falls back to raw round-trip time if the Server-Timing header is missing or
+/// uses an unrecognized format.
+pub fn test_latency(client: &Client) -> f64 {
+    match try_test_latency(client) {
+        Some(latency) => latency,
+        None => {
+            log::warn!("Latency measurement failed, returning 0.0");
+            0.0
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -1572,5 +1589,30 @@ mod tests {
         let latency = result.unwrap();
         // Must match rtt=5003, NOT min_rtt=4257
         assert!((latency - 5.003).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_test_latency_no_panic_on_request_failure() {
+        // Proxy pointed at a port with nothing listening - instant connection refused.
+        let client = reqwest::blocking::Client::builder()
+            .proxy(reqwest::Proxy::all("http://127.0.0.1:1").unwrap())
+            .build()
+            .unwrap();
+        // Must not panic. Returns 0.0 as the fallback for request failure.
+        let result = test_latency(&client);
+        assert!((result - 0.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_run_latency_test_all_failures_returns_zero_avg() {
+        // Every request fails immediately - all measurements will be 0.0
+        let client = reqwest::blocking::Client::builder()
+            .proxy(reqwest::Proxy::all("http://127.0.0.1:1").unwrap())
+            .build()
+            .unwrap();
+        let (measurements, avg) = run_latency_test(&client, 3, OutputFormat::Json);
+        // Measurements are populated (with 0.0 fallbacks), not empty
+        assert_eq!(measurements.len(), 3);
+        assert!((avg - 0.0).abs() < 0.001, "Average should be 0.0");
     }
 }
