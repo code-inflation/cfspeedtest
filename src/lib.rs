@@ -1,6 +1,7 @@
 pub mod boxplot;
 pub mod measurements;
 pub mod progress;
+pub mod run;
 pub mod speedtest;
 use std::fmt;
 use std::fmt::Display;

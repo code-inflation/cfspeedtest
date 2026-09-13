@@ -1,9 +1,12 @@
 use crate::measurements::format_bytes;
 use crate::measurements::log_measurements;
-use crate::measurements::LatencyMeasurement;
 use crate::measurements::Measurement;
 use crate::measurements::PayloadAttemptStats;
 use crate::progress::print_progress;
+use crate::run::{
+    interruptible_sleep, LatencyReport, LatencyStatus, MeasurementError, RunConfig, RunControl,
+    RunStatus, SpeedTestReport,
+};
 use crate::OutputFormat;
 use crate::SpeedTestCLIOptions;
 use jiff::Zoned;
@@ -18,8 +21,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
         LazyLock,
     },
-    thread,
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime},
 };
 
 const BASE_URL: &str = "https://speed.cloudflare.com";
@@ -106,102 +108,175 @@ impl Display for Metadata {
     }
 }
 
+/// Compatibility wrapper. Returns successful throughput samples and never exits the process.
+/// Use `speed_test_with_config` for explicit outcomes, latency, errors, and limits.
 pub fn speed_test(client: Client, options: SpeedTestCLIOptions) -> Vec<Measurement> {
-    let metadata = match fetch_metadata(&client) {
-        Ok(metadata) => metadata,
-        Err(e) => {
-            eprintln!("Error fetching metadata: {e}");
-            std::process::exit(1);
+    speed_test_with_config(client, options, RunConfig::default()).measurements
+}
+
+/// Run with a single deadline and retry-wait budget shared by every stage.
+/// Output follows `options.output_format`; the returned report is available in every format.
+pub fn speed_test_with_config(
+    client: Client,
+    options: SpeedTestCLIOptions,
+    config: RunConfig,
+) -> SpeedTestReport {
+    let mut control = RunControl::new(config);
+    let base_url = control.config.base_url.trim_end_matches('/').to_string();
+    let metadata = if let Some(timeout) = control.request_timeout() {
+        match fetch_metadata_request(&client, &base_url, Some(timeout)) {
+            Ok(metadata) => Some(metadata),
+            Err(error) => {
+                control.record("metadata", None, error);
+                None
+            }
         }
-    };
-    if options.output_format == OutputFormat::StdOut {
-        println!("{metadata}");
-    }
-    let (latency_measurements, avg_latency) =
-        run_latency_test(&client, options.nr_latency_tests, options.output_format);
-    let latency_measurement = if !latency_measurements.is_empty() {
-        Some(LatencyMeasurement {
-            avg_latency_ms: avg_latency,
-            min_latency_ms: latency_measurements
-                .iter()
-                .copied()
-                .fold(f64::INFINITY, f64::min),
-            max_latency_ms: latency_measurements
-                .iter()
-                .copied()
-                .fold(f64::NEG_INFINITY, f64::max),
-            latency_measurements,
-        })
     } else {
         None
     };
-
+    if options.output_format == OutputFormat::StdOut {
+        if let Some(metadata) = &metadata {
+            println!("{metadata}");
+        }
+    }
+    let latency = run_latency_with_control(
+        &client,
+        options.nr_latency_tests,
+        options.output_format,
+        &mut control,
+    );
     let payload_sizes = PayloadSize::sizes_from_max(options.max_payload_size.clone());
+    let retry_options = RetryRunOptions {
+        nr_tests: options.nr_tests,
+        output_format: options.output_format,
+        disable_dynamic_max_payload_size: options.disable_dynamic_max_payload_size,
+    };
     let mut measurements = Vec::new();
     let mut payload_attempt_stats = Vec::new();
-
-    if options.should_download() {
-        let (download_measurements, download_attempt_stats) = run_tests_with_retries(
-            &client,
-            TestType::Download,
-            payload_sizes.clone(),
-            options.nr_tests,
-            options.output_format,
-            options.disable_dynamic_max_payload_size,
-        );
-        measurements.extend(download_measurements);
-        payload_attempt_stats.extend(download_attempt_stats);
+    let cancelled = control.config.cancelled.clone();
+    for (enabled, test_type) in [
+        (options.should_download(), TestType::Download),
+        (options.should_upload(), TestType::Upload),
+    ] {
+        if enabled {
+            let (samples, attempts) = run_tests_with_control(
+                &client,
+                test_type,
+                payload_sizes.clone(),
+                retry_options,
+                &mut control,
+                |delay| interruptible_sleep(delay, &cancelled),
+            );
+            measurements.extend(samples);
+            payload_attempt_stats.extend(attempts);
+        }
     }
-
-    if options.should_upload() {
-        let (upload_measurements, upload_attempt_stats) = run_tests_with_retries(
-            &client,
-            TestType::Upload,
-            payload_sizes.clone(),
-            options.nr_tests,
-            options.output_format,
-            options.disable_dynamic_max_payload_size,
-        );
-        measurements.extend(upload_measurements);
-        payload_attempt_stats.extend(upload_attempt_stats);
-    }
-
+    control.remaining();
+    let status = if measurements.is_empty() {
+        RunStatus::Failed
+    } else if control.stop_reason.is_some()
+        || matches!(
+            latency.status,
+            LatencyStatus::Failed | LatencyStatus::Partial
+        )
+        || payload_attempt_stats
+            .iter()
+            .any(|s| s.successes < s.target_successes)
+    {
+        RunStatus::Partial
+    } else {
+        RunStatus::Complete
+    };
+    let report = SpeedTestReport {
+        status,
+        stop_reason: control.stop_reason,
+        metadata,
+        latency,
+        measurements,
+        payload_attempt_stats,
+        errors: control.errors,
+    };
     log_measurements(
-        &measurements,
-        &payload_attempt_stats,
-        latency_measurement.as_ref(),
+        &report,
         payload_sizes,
         options.verbose,
         options.output_format,
-        Some(&metadata),
     );
-    measurements
+    report
 }
 
+/// Compatibility wrapper. The average is NaN when there are no valid samples.
+/// Use `run_latency_report` to distinguish disabled, partial, and failed measurements.
 pub fn run_latency_test(
     client: &Client,
     nr_latency_tests: u32,
     output_format: OutputFormat,
 ) -> (Vec<f64>, f64) {
-    let mut measurements: Vec<f64> = Vec::new();
+    let report = run_latency_report(
+        client,
+        nr_latency_tests,
+        output_format,
+        RunConfig::default(),
+    );
+    (
+        report.latency_measurements,
+        report.avg_latency_ms.unwrap_or(f64::NAN),
+    )
+}
+
+pub fn run_latency_report(
+    client: &Client,
+    nr_latency_tests: u32,
+    output_format: OutputFormat,
+    config: RunConfig,
+) -> LatencyReport {
+    run_latency_with_control(
+        client,
+        nr_latency_tests,
+        output_format,
+        &mut RunControl::new(config),
+    )
+}
+
+fn run_latency_with_control(
+    client: &Client,
+    nr_latency_tests: u32,
+    output_format: OutputFormat,
+    control: &mut RunControl,
+) -> LatencyReport {
+    let mut report = LatencyReport::new(nr_latency_tests);
+    let base_url = control.config.base_url.trim_end_matches('/').to_string();
     for i in 0..nr_latency_tests {
+        let Some(timeout) = control.request_timeout() else {
+            break;
+        };
         if output_format == OutputFormat::StdOut {
             print_progress("latency test", i + 1, nr_latency_tests);
         }
-        if let Some(latency) = try_test_latency(client) {
-            measurements.push(latency);
+        report.attempts += 1;
+        match test_latency_request(client, &base_url, Some(timeout)) {
+            Ok(latency) => report.latency_measurements.push(latency),
+            Err(error) => {
+                control.record("latency", None, error.clone());
+                report.errors.push(error);
+            }
         }
     }
-    let avg_latency = if measurements.is_empty() {
-        0.0
-    } else {
-        measurements.iter().sum::<f64>() / measurements.len() as f64
-    };
-
-    if output_format == OutputFormat::StdOut {
-        println!("\nAvg GET request latency {avg_latency:.2} ms\n");
+    report.finish();
+    if output_format == OutputFormat::StdOut && nr_latency_tests > 0 {
+        if let Some(avg) = report.avg_latency_ms {
+            println!(
+                "\nAvg GET request latency {avg:.2} ms ({}/{} valid samples)\n",
+                report.successes, report.target_samples
+            );
+        } else {
+            println!(
+                "\nAvg GET request latency N/A (0/{} valid samples)\n",
+                report.target_samples
+            );
+        }
     }
-    (measurements, avg_latency)
+    report
 }
 
 // Parse latency from a Server-Timing header value. Supports the legacy
@@ -233,49 +308,68 @@ fn parse_latency_from_server_timing(header: &str, total_ms: f64) -> Option<f64> 
     None
 }
 
-fn try_test_latency(client: &Client) -> Option<f64> {
-    let url = &format!("{}/{}{}", BASE_URL, DOWNLOAD_URL, 0);
-    let req_builder = client.get(url);
+/// Measure one valid latency response, retaining the cause of a failed measurement.
+pub fn try_test_latency(client: &Client) -> Result<f64, MeasurementError> {
+    test_latency_request(client, BASE_URL, None)
+}
 
+fn test_latency_request(
+    client: &Client,
+    base_url: &str,
+    timeout: Option<Duration>,
+) -> Result<f64, MeasurementError> {
+    let url = format!("{base_url}/{DOWNLOAD_URL}0");
+    let mut request = client.get(url);
+    if let Some(timeout) = timeout {
+        request = request.timeout(timeout);
+    }
     let start = Instant::now();
-    let mut response = match req_builder.send() {
-        Ok(resp) => resp,
-        Err(e) => {
-            log::debug!("Latency test request failed: {e}");
-            return None;
-        }
-    };
-    let _status_code = response.status();
-    let _ = std::io::copy(&mut response, &mut std::io::sink());
+    let mut response = request.send()?.error_for_status()?;
+    let status_code = response.status().as_u16();
+    if status_code != 200 {
+        return Err(MeasurementError {
+            status_code: Some(status_code),
+            reason: "unexpected latency response status".into(),
+        });
+    }
+    let received =
+        std::io::copy(&mut response, &mut std::io::sink()).map_err(|error| MeasurementError {
+            status_code: Some(status_code),
+            reason: format!("failed to read latency body: {error}"),
+        })?;
+    if received != 0 {
+        return Err(MeasurementError {
+            status_code: Some(status_code),
+            reason: format!("expected empty latency body, received {received} bytes"),
+        });
+    }
     let total_ms = start.elapsed().as_secs_f64() * 1_000.0;
-
     let server_timing = response
         .headers()
         .get("Server-Timing")
         .and_then(|v| v.to_str().ok());
-
     if let Some(header) = server_timing {
         if let Some(latency) = parse_latency_from_server_timing(header, total_ms) {
-            log::debug!("latency: total_ms={total_ms:.3} parsed={latency:.3}");
-            return Some(latency);
+            if latency.is_finite() && latency >= 0.0 {
+                return Ok(latency);
+            }
+            return Err(MeasurementError {
+                status_code: Some(status_code),
+                reason: "non-finite latency in Server-Timing".into(),
+            });
         }
         if !WARNED_UNKNOWN_HEADER.swap(true, Ordering::Relaxed) {
             log::warn!("Server-Timing header format not recognized, falling back to raw RTT");
         }
-    } else {
-        if !WARNED_NO_HEADER.swap(true, Ordering::Relaxed) {
-            log::warn!("No Server-Timing header in response, falling back to raw RTT");
-        }
+    } else if !WARNED_NO_HEADER.swap(true, Ordering::Relaxed) {
+        log::warn!("No Server-Timing header in response, falling back to raw RTT");
     }
-    log::debug!("latency fallback: total_ms={total_ms:.3}");
-    Some(total_ms)
+    Ok(total_ms)
 }
 
+/// Compatibility wrapper. Returns NaN on failure; prefer `try_test_latency`.
 pub fn test_latency(client: &Client) -> f64 {
-    try_test_latency(client).unwrap_or_else(|| {
-        log::debug!("Latency measurement failed, returning 0.0");
-        0.0
-    })
+    try_test_latency(client).unwrap_or(f64::NAN)
 }
 
 #[derive(Debug)]
@@ -352,36 +446,61 @@ pub fn run_tests_with_retries(
     output_format: OutputFormat,
     disable_dynamic_max_payload_size: bool,
 ) -> (Vec<Measurement>, Vec<PayloadAttemptStats>) {
-    let options = RetryRunOptions {
-        nr_tests,
-        output_format,
-        disable_dynamic_max_payload_size,
-    };
-    run_tests_with_sleep(
+    let mut control = RunControl::new(RunConfig::default());
+    let cancelled = control.config.cancelled.clone();
+    run_tests_with_control(
         client,
         test_type,
         payload_sizes,
-        options,
-        BASE_URL,
-        thread::sleep,
+        RetryRunOptions {
+            nr_tests,
+            output_format,
+            disable_dynamic_max_payload_size,
+        },
+        &mut control,
+        |delay| interruptible_sleep(delay, &cancelled),
     )
 }
 
-fn run_tests_with_sleep<S>(
+#[cfg(test)]
+fn run_tests_with_sleep<S: Fn(Duration)>(
     client: &Client,
     test_type: TestType,
     payload_sizes: Vec<usize>,
     options: RetryRunOptions,
     base_url: &str,
     sleep_fn: S,
-) -> (Vec<Measurement>, Vec<PayloadAttemptStats>)
-where
-    S: Fn(Duration),
-{
+) -> (Vec<Measurement>, Vec<PayloadAttemptStats>) {
+    let mut control = RunControl::new(RunConfig {
+        base_url: base_url.into(),
+        ..RunConfig::default()
+    });
+    run_tests_with_control(
+        client,
+        test_type,
+        payload_sizes,
+        options,
+        &mut control,
+        sleep_fn,
+    )
+}
+
+fn run_tests_with_control<S: Fn(Duration)>(
+    client: &Client,
+    test_type: TestType,
+    payload_sizes: Vec<usize>,
+    options: RetryRunOptions,
+    control: &mut RunControl,
+    sleep_fn: S,
+) -> (Vec<Measurement>, Vec<PayloadAttemptStats>) {
+    let base_url = control.config.base_url.trim_end_matches('/').to_string();
     let mut measurements: Vec<Measurement> = Vec::new();
     let mut payload_attempt_stats = Vec::new();
 
     for payload_size in payload_sizes {
+        if control.remaining().is_none() {
+            break;
+        }
         let label = format!("{:?} {:<5}", test_type, format_bytes(payload_size));
         log::debug!("running tests for payload_size {payload_size}");
         let start = Instant::now();
@@ -396,21 +515,29 @@ where
             .max(options.nr_tests);
 
         while successes < options.nr_tests && attempts < max_attempts {
+            let Some(timeout) = control.request_timeout() else {
+                break;
+            };
             if options.output_format == OutputFormat::StdOut {
                 print_progress(&label, successes, options.nr_tests);
             }
 
             attempts += 1;
             let sample_outcome = match test_type {
-                TestType::Download => test_download_with_base_url(
+                TestType::Download => test_download_request(
                     client,
                     payload_size,
                     options.output_format,
-                    base_url,
+                    &base_url,
+                    Some(timeout),
                 ),
-                TestType::Upload => {
-                    test_upload_with_base_url(client, payload_size, options.output_format, base_url)
-                }
+                TestType::Upload => test_upload_request(
+                    client,
+                    payload_size,
+                    options.output_format,
+                    &base_url,
+                    Some(timeout),
+                ),
             };
 
             match sample_outcome {
@@ -440,9 +567,20 @@ where
                     reason,
                 } => {
                     skipped += 1;
+                    control.record(
+                        &format!("{test_type:?}").to_lowercase(),
+                        Some(payload_size),
+                        MeasurementError {
+                            status_code: status_code.map(|s| s.as_u16()),
+                            reason: reason.clone(),
+                        },
+                    );
                     retry_streak += 1;
                     if attempts < max_attempts {
                         let delay = compute_retry_delay(retry_streak, retry_after);
+                        if !control.reserve_retry(delay) {
+                            break;
+                        }
                         let status = status_code
                             .map(|code| code.to_string())
                             .unwrap_or_else(|| "transport error".to_string());
@@ -464,6 +602,14 @@ where
                     reason,
                 } => {
                     skipped += 1;
+                    control.record(
+                        &format!("{test_type:?}").to_lowercase(),
+                        Some(payload_size),
+                        MeasurementError {
+                            status_code: status_code.map(|s| s.as_u16()),
+                            reason: reason.clone(),
+                        },
+                    );
                     let status = status_code
                         .map(|code| code.to_string())
                         .unwrap_or_else(|| "transport error".to_string());
@@ -533,9 +679,22 @@ fn test_upload_with_base_url(
     output_format: OutputFormat,
     base_url: &str,
 ) -> SampleOutcome {
+    test_upload_request(client, payload_size_bytes, output_format, base_url, None)
+}
+
+fn test_upload_request(
+    client: &Client,
+    payload_size_bytes: usize,
+    output_format: OutputFormat,
+    base_url: &str,
+    timeout: Option<Duration>,
+) -> SampleOutcome {
     let url = format!("{base_url}/{UPLOAD_URL}");
     let payload: Vec<u8> = vec![1; payload_size_bytes];
-    let req_builder = client.post(&url).body(payload);
+    let mut req_builder = client.post(&url).body(payload);
+    if let Some(timeout) = timeout {
+        req_builder = req_builder.timeout(timeout);
+    }
 
     let start = Instant::now();
     let mut response = match req_builder.send() {
@@ -565,8 +724,8 @@ fn test_upload_with_base_url(
     let retry_after = parse_retry_after(response.headers().get(RETRY_AFTER));
     // Measure upload duration once response headers are available.
     let duration = start.elapsed();
-    // Drain response after timing so we don't skew upload measurement.
-    let _ = std::io::copy(&mut response, &mut std::io::sink());
+    // Validate completion after timing so response download time does not skew upload speed.
+    let body_result = std::io::copy(&mut response, &mut std::io::sink());
     if !status_code.is_success() {
         if output_format == OutputFormat::StdOut {
             print_skipped_sample(duration, status_code, payload_size_bytes);
@@ -587,7 +746,22 @@ fn test_upload_with_base_url(
         };
     }
 
+    if let Err(error) = body_result {
+        return SampleOutcome::RetryableFailure {
+            duration,
+            status_code: Some(status_code),
+            retry_after: None,
+            reason: format!("failed to read upload response: {error}"),
+        };
+    }
     let mbits = (payload_size_bytes as f64 * 8.0 / 1_000_000.0) / duration.as_secs_f64();
+    if !mbits.is_finite() || mbits <= 0.0 {
+        return SampleOutcome::Failed {
+            duration,
+            status_code: Some(status_code),
+            reason: "invalid upload throughput".into(),
+        };
+    }
     if output_format == OutputFormat::StdOut {
         print_current_speed(mbits, duration, payload_size_bytes);
     }
@@ -604,8 +778,21 @@ fn test_download_with_base_url(
     output_format: OutputFormat,
     base_url: &str,
 ) -> SampleOutcome {
+    test_download_request(client, payload_size_bytes, output_format, base_url, None)
+}
+
+fn test_download_request(
+    client: &Client,
+    payload_size_bytes: usize,
+    output_format: OutputFormat,
+    base_url: &str,
+    timeout: Option<Duration>,
+) -> SampleOutcome {
     let url = format!("{base_url}/{DOWNLOAD_URL}{payload_size_bytes}");
-    let req_builder = client.get(&url);
+    let mut req_builder = client.get(&url);
+    if let Some(timeout) = timeout {
+        req_builder = req_builder.timeout(timeout);
+    }
 
     let start = Instant::now();
     let mut response = match req_builder.send() {
@@ -632,8 +819,8 @@ fn test_download_with_base_url(
     };
 
     let status_code = response.status();
-    // Stream the body to avoid buffering the full payload in memory.
-    let _ = std::io::copy(&mut response, &mut std::io::sink());
+    // Retain body errors and byte counts: a successful status alone is not a sample.
+    let body_result = std::io::copy(&mut response, &mut std::io::sink());
     let duration = start.elapsed();
     if !status_code.is_success() {
         if output_format == OutputFormat::StdOut {
@@ -656,7 +843,34 @@ fn test_download_with_base_url(
         };
     }
 
-    let mbits = (payload_size_bytes as f64 * 8.0 / 1_000_000.0) / duration.as_secs_f64();
+    let received = match body_result {
+        Ok(received) => received,
+        Err(error) => {
+            return SampleOutcome::RetryableFailure {
+                duration,
+                status_code: Some(status_code),
+                retry_after: None,
+                reason: format!("failed to read download body: {error}"),
+            }
+        }
+    };
+    if received != payload_size_bytes as u64 {
+        return SampleOutcome::Failed {
+            duration,
+            status_code: Some(status_code),
+            reason: format!(
+                "incorrect download size: expected {payload_size_bytes} bytes, received {received}"
+            ),
+        };
+    }
+    let mbits = (received as f64 * 8.0 / 1_000_000.0) / duration.as_secs_f64();
+    if !mbits.is_finite() || mbits <= 0.0 {
+        return SampleOutcome::Failed {
+            duration,
+            status_code: Some(status_code),
+            reason: "invalid download throughput".to_string(),
+        };
+    }
     if output_format == OutputFormat::StdOut {
         print_current_speed(mbits, duration, payload_size_bytes);
     }
@@ -675,10 +889,23 @@ fn is_retryable_status(status_code: StatusCode) -> bool {
 }
 
 fn parse_retry_after(retry_after: Option<&reqwest::header::HeaderValue>) -> Option<Duration> {
-    retry_after
-        .and_then(|header| header.to_str().ok())
-        .and_then(|value| value.trim().parse::<u64>().ok())
-        .map(Duration::from_secs)
+    parse_retry_after_at(retry_after, SystemTime::now())
+}
+
+fn parse_retry_after_at(
+    retry_after: Option<&reqwest::header::HeaderValue>,
+    now: SystemTime,
+) -> Option<Duration> {
+    let value = retry_after?.to_str().ok()?.trim();
+    if !value.is_empty() && value.bytes().all(|b| b.is_ascii_digit()) {
+        // Overflow must not turn an enormous server delay into a short retry.
+        return Some(Duration::from_secs(
+            value.parse::<u64>().unwrap_or(u64::MAX),
+        ));
+    }
+    httpdate::parse_http_date(value)
+        .ok()
+        .map(|time| time.duration_since(now).unwrap_or(Duration::ZERO))
 }
 
 fn compute_retry_delay(retry_count: u32, retry_after: Option<Duration>) -> Duration {
@@ -773,29 +1000,43 @@ fn flush_stdout() {
     let _ = std::io::stdout().flush();
 }
 
-pub fn fetch_metadata(client: &Client) -> Result<Metadata, reqwest::Error> {
-    const TRACE_URL: &str = "https://speed.cloudflare.com/cdn-cgi/trace";
+pub fn fetch_metadata(client: &Client) -> Result<Metadata, MeasurementError> {
+    fetch_metadata_request(client, BASE_URL, None)
+}
 
-    let response = client.get(TRACE_URL).send()?;
+fn fetch_metadata_request(
+    client: &Client,
+    base_url: &str,
+    timeout: Option<Duration>,
+) -> Result<Metadata, MeasurementError> {
+    let mut request = client.get(format!("{base_url}/cdn-cgi/trace"));
+    if let Some(timeout) = timeout {
+        request = request.timeout(timeout);
+    }
+    let response = request.send()?.error_for_status()?;
+    let status_code = response.status().as_u16();
     let body = response.text()?;
-
-    // Parse key=value pairs from response body
     let trace_data = parse_trace_response(&body);
-
-    Ok(Metadata {
-        country: trace_data
-            .get("loc")
-            .unwrap_or(&"N/A".to_string())
-            .to_owned(),
-        ip: trace_data
-            .get("ip")
-            .unwrap_or(&"N/A".to_string())
-            .to_owned(),
-        colo: trace_data
-            .get("colo")
-            .unwrap_or(&"N/A".to_string())
-            .to_owned(),
-    })
+    let ip = trace_data
+        .get("ip")
+        .filter(|ip| ip.parse::<std::net::IpAddr>().is_ok());
+    let country = trace_data
+        .get("loc")
+        .filter(|s| s.len() == 2 && s.bytes().all(|b| b.is_ascii_uppercase()));
+    let colo = trace_data
+        .get("colo")
+        .filter(|s| s.len() == 3 && s.bytes().all(|b| b.is_ascii_uppercase()));
+    match (ip, country, colo) {
+        (Some(ip), Some(country), Some(colo)) => Ok(Metadata {
+            ip: ip.clone(),
+            country: country.clone(),
+            colo: colo.clone(),
+        }),
+        _ => Err(MeasurementError {
+            status_code: Some(status_code),
+            reason: "metadata response has missing or invalid ip, loc, or colo fields".into(),
+        }),
+    }
 }
 
 /// Parses the Cloudflare trace response body into a key-value map
@@ -855,8 +1096,27 @@ mod tests {
             while idx < responses.len() {
                 match listener.accept() {
                     Ok((mut stream, _)) => {
-                        let mut buf = [0_u8; 1024];
-                        let _ = stream.read(&mut buf);
+                        stream
+                            .set_read_timeout(Some(Duration::from_secs(2)))
+                            .unwrap();
+                        let mut request = Vec::new();
+                        let mut buf = [0_u8; 4096];
+                        loop {
+                            let count = stream.read(&mut buf).unwrap();
+                            assert!(count > 0, "incomplete mock request");
+                            request.extend_from_slice(&buf[..count]);
+                            if let Some(end) = request.windows(4).position(|b| b == b"\r\n\r\n") {
+                                let headers = String::from_utf8_lossy(&request[..end]);
+                                let length = headers
+                                    .lines()
+                                    .filter_map(|line| line.split_once(':'))
+                                    .find(|(key, _)| key.eq_ignore_ascii_case("content-length"))
+                                    .map_or(0, |(_, value)| value.trim().parse::<usize>().unwrap());
+                                if request.len() >= end + 4 + length {
+                                    break;
+                                }
+                            }
+                        }
 
                         let response = &responses[idx];
                         let mut response_head = format!(
@@ -1122,7 +1382,7 @@ mod tests {
         let (measurements, payload_stats) = run_tests_with_sleep(
             &client,
             TestType::Download,
-            vec![100_000],
+            vec![2],
             RetryRunOptions {
                 nr_tests: 1,
                 output_format: OutputFormat::None,
@@ -1176,7 +1436,7 @@ mod tests {
         let (measurements, payload_stats) = run_tests_with_sleep(
             &client,
             TestType::Download,
-            vec![100_000],
+            vec![2],
             RetryRunOptions {
                 nr_tests: 6,
                 output_format: OutputFormat::None,
@@ -1247,7 +1507,7 @@ mod tests {
         let (measurements, payload_stats) = run_tests_with_sleep(
             &client,
             TestType::Download,
-            vec![100_000],
+            vec![2],
             RetryRunOptions {
                 nr_tests: 2,
                 output_format: OutputFormat::None,
@@ -1297,7 +1557,7 @@ mod tests {
         let (measurements, payload_stats) = run_tests_with_sleep(
             &client,
             TestType::Download,
-            vec![100_000],
+            vec![2],
             RetryRunOptions {
                 nr_tests: 2,
                 output_format: OutputFormat::None,
@@ -1334,7 +1594,7 @@ mod tests {
         let (measurements, payload_stats) = run_tests_with_sleep(
             &client,
             TestType::Download,
-            vec![100_000],
+            vec![2],
             RetryRunOptions {
                 nr_tests: 2,
                 output_format: OutputFormat::None,
@@ -1352,6 +1612,99 @@ mod tests {
 
         handle.join().expect("mock server thread panicked");
         assert_eq!(served_counter.load(AtomicOrdering::SeqCst), 1);
+    }
+
+    #[test]
+    fn p1_retry_budget_is_shared_across_download_and_upload() {
+        let responses = vec![
+            MockHttpResponse {
+                status_code: 429,
+                reason: "Retry",
+                headers: vec![("Retry-After", "1")],
+                body: "",
+            },
+            MockHttpResponse {
+                status_code: 200,
+                reason: "OK",
+                headers: vec![],
+                body: "ok",
+            },
+            MockHttpResponse {
+                status_code: 429,
+                reason: "Retry",
+                headers: vec![("Retry-After", "1")],
+                body: "",
+            },
+        ];
+        let (base_url, served, server) = spawn_mock_http_server(responses);
+        let client = Client::builder().no_proxy().build().unwrap();
+        let mut control = RunControl::new(RunConfig {
+            base_url,
+            max_retry_wait: Duration::from_secs(1),
+            ..RunConfig::default()
+        });
+        let options = RetryRunOptions {
+            nr_tests: 1,
+            output_format: OutputFormat::None,
+            disable_dynamic_max_payload_size: true,
+        };
+        let delays = std::cell::RefCell::new(Vec::new());
+        let sleep = |delay| delays.borrow_mut().push(delay);
+        let (downloads, _) = run_tests_with_control(
+            &client,
+            TestType::Download,
+            vec![2],
+            options,
+            &mut control,
+            sleep,
+        );
+        let (uploads, _) = run_tests_with_control(
+            &client,
+            TestType::Upload,
+            vec![2],
+            options,
+            &mut control,
+            sleep,
+        );
+        server.join().unwrap();
+        assert_eq!(served.load(AtomicOrdering::SeqCst), 3);
+        assert_eq!(downloads.len(), 1);
+        assert!(uploads.is_empty());
+        assert_eq!(*delays.borrow(), vec![Duration::from_secs(1)]);
+        assert_eq!(
+            control.stop_reason,
+            Some(crate::run::StopReason::RetryBudget)
+        );
+    }
+
+    #[test]
+    fn p1_retry_after_supports_dates_and_handles_invalid_and_huge_delays() {
+        let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+        let future = httpdate::fmt_http_date(now + Duration::from_secs(300));
+        let past = httpdate::fmt_http_date(now - Duration::from_secs(300));
+        for (input, expected) in [
+            (future.as_str(), Some(Duration::from_secs(300))),
+            (past.as_str(), Some(Duration::ZERO)),
+            ("0", Some(Duration::ZERO)),
+            (" 42 ", Some(Duration::from_secs(42))),
+            (
+                "999999999999999999999999999999999999",
+                Some(Duration::from_secs(u64::MAX)),
+            ),
+            ("-1", None),
+            ("1.5", None),
+            ("nonsense", None),
+            ("", None),
+        ] {
+            let header = reqwest::header::HeaderValue::from_str(input).unwrap();
+            assert_eq!(
+                parse_retry_after_at(Some(&header), now),
+                expected,
+                "{input}"
+            );
+        }
+        assert_eq!(parse_retry_after_at(None, now), None);
+        assert_eq!(compute_retry_delay(999, None), Duration::from_millis(2400));
     }
 
     #[test]
@@ -1591,13 +1944,13 @@ mod tests {
             .proxy(reqwest::Proxy::all("http://127.0.0.1:1").unwrap())
             .build()
             .unwrap();
-        // Must not panic. Returns 0.0 as the fallback for request failure.
+        // Must not panic or return a plausible latency on failure.
         let result = test_latency(&client);
-        assert!((result - 0.0).abs() < 0.001);
+        assert!(result.is_nan());
     }
 
     #[test]
-    fn test_run_latency_test_all_failures_returns_zero_avg() {
+    fn test_run_latency_test_all_failures_returns_nan_avg() {
         // Every request fails immediately - failed samples are skipped
         let client = reqwest::blocking::Client::builder()
             .proxy(reqwest::Proxy::all("http://127.0.0.1:1").unwrap())
@@ -1605,6 +1958,93 @@ mod tests {
             .unwrap();
         let (measurements, avg) = run_latency_test(&client, 3, OutputFormat::Json);
         assert!(measurements.is_empty(), "Failed requests should be skipped");
-        assert!((avg - 0.0).abs() < 0.001, "Average should be 0.0");
+        assert!(
+            avg.is_nan(),
+            "Missing average must not be a zero measurement"
+        );
+    }
+}
+
+#[cfg(test)]
+mod p1_regressions {
+    use super::*;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::thread;
+
+    fn download_response(response: &'static [u8], pause: Duration) -> SampleOutcome {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(2)))
+                .unwrap();
+            let mut request = Vec::new();
+            let mut buffer = [0; 4096];
+            while !request.windows(4).any(|bytes| bytes == b"\r\n\r\n") {
+                let received = stream.read(&mut buffer).unwrap();
+                assert!(received > 0, "incomplete mock request headers");
+                request.extend_from_slice(&buffer[..received]);
+            }
+            stream.write_all(response).unwrap();
+            thread::sleep(pause);
+        });
+        let client = Client::builder()
+            .no_proxy()
+            .timeout(Duration::from_millis(100))
+            .build()
+            .unwrap();
+        let outcome = test_download_with_base_url(&client, 4, OutputFormat::None, &url);
+        server.join().unwrap();
+        outcome
+    }
+
+    #[test]
+    fn p1_download_rejects_truncated_body() {
+        let result = download_response(
+            b"HTTP/1.1 200 OK\r\nContent-Length: 4\r\nConnection: close\r\n\r\nok",
+            Duration::ZERO,
+        );
+        assert!(
+            !matches!(result, SampleOutcome::Success { .. }),
+            "{result:?}"
+        );
+    }
+
+    #[test]
+    fn p1_download_rejects_incorrect_size() {
+        for response in [
+            b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok".as_slice(),
+            b"HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n".as_slice(),
+            b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\nConnection: close\r\n\r\n12345".as_slice(),
+        ] {
+            let result = download_response(response, Duration::ZERO);
+            assert!(
+                !matches!(result, SampleOutcome::Success { .. }),
+                "{result:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn p1_download_rejects_body_timeout() {
+        let result = download_response(
+            b"HTTP/1.1 200 OK\r\nContent-Length: 4\r\nConnection: close\r\n\r\n",
+            Duration::from_millis(250),
+        );
+        assert!(
+            !matches!(result, SampleOutcome::Success { .. }),
+            "{result:?}"
+        );
+    }
+
+    #[test]
+    fn p1_download_accepts_complete_chunked_body() {
+        let result = download_response(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n2\r\nab\r\n2\r\ncd\r\n0\r\n\r\n", Duration::ZERO);
+        assert!(
+            matches!(result, SampleOutcome::Success { mbits, .. } if mbits.is_finite() && mbits > 0.0),
+            "{result:?}"
+        );
     }
 }
