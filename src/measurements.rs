@@ -1,4 +1,5 @@
 use crate::boxplot;
+use crate::run::SpeedTestReport;
 use crate::speedtest::Metadata;
 use crate::speedtest::TestType;
 use crate::OutputFormat;
@@ -60,14 +61,13 @@ impl Display for Measurement {
 }
 
 pub(crate) fn log_measurements(
-    measurements: &[Measurement],
-    payload_attempt_stats: &[PayloadAttemptStats],
-    latency_measurement: Option<&LatencyMeasurement>,
+    report: &SpeedTestReport,
     payload_sizes: Vec<usize>,
     verbose: bool,
     output_format: OutputFormat,
-    metadata: Option<&Metadata>,
 ) {
+    let measurements = &report.measurements;
+    let payload_attempt_stats = &report.payload_attempt_stats;
     if output_format == OutputFormat::StdOut {
         println!("\nSummary Statistics");
         if verbose {
@@ -104,18 +104,46 @@ pub(crate) fn log_measurements(
             wtr.flush().unwrap();
         }
         OutputFormat::Json => {
-            let output = compose_output_json(&stat_measurements, latency_measurement, metadata);
+            let output = compose_report_json(&stat_measurements, report);
             serde_json::to_writer(io::stdout(), &output).unwrap();
             println!();
         }
         OutputFormat::JsonPretty => {
-            let output = compose_output_json(&stat_measurements, latency_measurement, metadata);
+            let output = compose_report_json(&stat_measurements, report);
             serde_json::to_writer_pretty(io::stdout(), &output).unwrap();
             println!();
         }
         OutputFormat::StdOut => {}
         OutputFormat::None => {}
     }
+}
+
+fn compose_report_json(
+    stat_measurements: &[StatMeasurement],
+    report: &SpeedTestReport,
+) -> serde_json::Map<String, serde_json::Value> {
+    let mut output = compose_output_json(stat_measurements, None, report.metadata.as_ref());
+    output.insert(
+        "metadata".into(),
+        serde_json::to_value(&report.metadata).unwrap(),
+    );
+    output.insert(
+        "latency_measurement".into(),
+        serde_json::to_value(&report.latency).unwrap(),
+    );
+    output.insert(
+        "status".into(),
+        serde_json::to_value(report.status).unwrap(),
+    );
+    output.insert(
+        "stop_reason".into(),
+        serde_json::to_value(report.stop_reason).unwrap(),
+    );
+    output.insert(
+        "errors".into(),
+        serde_json::to_value(&report.errors).unwrap(),
+    );
+    output
 }
 
 fn compose_output_json(
@@ -276,17 +304,9 @@ fn calc_stats(mbit_measurements: Vec<f64>) -> Option<(f64, f64, f64, f64, f64, f
         ));
     }
 
-    let q1 = if length.is_multiple_of(2) {
-        median(&sorted_data[0..length / 2])
-    } else {
-        median(&sorted_data[0..length.div_ceil(2)])
-    };
-
-    let q3 = if length.is_multiple_of(2) {
-        median(&sorted_data[length / 2..length])
-    } else {
-        median(&sorted_data[length.div_ceil(2)..length])
-    };
+    // Median of each half, excluding the middle sample for odd lengths.
+    let q1 = median(&sorted_data[..length / 2]);
+    let q3 = median(&sorted_data[length.div_ceil(2)..]);
 
     Some((
         *sorted_data.first().unwrap(),
@@ -455,5 +475,26 @@ mod tests {
             keys,
             vec!["metadata", "latency_measurement", "speed_measurements"]
         );
+    }
+}
+
+#[cfg(test)]
+mod p1_regressions {
+    use super::*;
+
+    #[test]
+    fn p1_quartiles_exclude_middle_sample_consistently() {
+        let (_, q1, median, q3, _, _) = calc_stats(vec![1., 2., 3., 4., 5.]).unwrap();
+        assert_eq!((q1, median, q3), (1.5, 3., 4.5));
+    }
+
+    #[test]
+    fn p1_quartiles_are_symmetric_for_odd_and_even_samples() {
+        for count in 2..20 {
+            let values = (1..=count).map(f64::from).collect();
+            let (_, q1, median, q3, _, _) = calc_stats(values).unwrap();
+            assert_eq!(median - q1, q3 - median, "count={count}");
+        }
+        assert_eq!(calc_stats(vec![7.; 5]).unwrap(), (7., 7., 7., 7., 7., 7.));
     }
 }
