@@ -7,6 +7,7 @@ use crate::run::{
     interruptible_sleep, LatencyReport, LatencyStatus, MeasurementError, RunConfig, RunControl,
     RunStatus, SpeedTestReport,
 };
+use crate::stdout;
 use crate::OutputFormat;
 use crate::SpeedTestCLIOptions;
 use jiff::Zoned;
@@ -16,7 +17,6 @@ use reqwest::{blocking::Client, header::RETRY_AFTER, StatusCode};
 use serde::Serialize;
 use std::{
     fmt::Display,
-    io::Write,
     sync::{
         atomic::{AtomicBool, Ordering},
         LazyLock,
@@ -136,7 +136,7 @@ pub fn speed_test_with_config(
     };
     if options.output_format == OutputFormat::StdOut {
         if let Some(metadata) = &metadata {
-            println!("{metadata}");
+            stdout::print_line(&metadata.to_string());
         }
     }
     let latency = run_latency_with_control(
@@ -265,15 +265,15 @@ fn run_latency_with_control(
     report.finish();
     if output_format == OutputFormat::StdOut && nr_latency_tests > 0 {
         if let Some(avg) = report.avg_latency_ms {
-            println!(
+            stdout::print_line(&format!(
                 "\nAvg GET request latency {avg:.2} ms ({}/{} valid samples)\n",
                 report.successes, report.target_samples
-            );
+            ));
         } else {
-            println!(
+            stdout::print_line(&format!(
                 "\nAvg GET request latency N/A (0/{} valid samples)\n",
                 report.target_samples
-            );
+            ));
         }
     }
     report
@@ -428,7 +428,7 @@ pub fn run_tests(
                 nr_tests,
                 nr_tests,
             );
-            println!();
+            stdout::print_line("");
         }
         if !disable_dynamic_max_payload_size && start.elapsed() > TIME_THRESHOLD {
             log::info!("Exceeded threshold");
@@ -625,7 +625,7 @@ fn run_tests_with_control<S: Fn(Duration)>(
 
         if options.output_format == OutputFormat::StdOut {
             print_progress(&label, successes, options.nr_tests);
-            println!();
+            stdout::print_line("");
         }
 
         payload_attempt_stats.push(PayloadAttemptStats {
@@ -931,45 +931,41 @@ fn compute_retry_delay(retry_count: u32, retry_after: Option<Duration>) -> Durat
 }
 
 fn print_current_speed(mbits: f64, duration: Duration, payload_size_bytes: usize) {
-    print!(
+    stdout::print(&format!(
         "  {:>6.2} mbit/s | {:>5} in {:>4}ms  ",
         mbits,
         format_bytes(payload_size_bytes),
         duration.as_millis(),
-    );
-    flush_stdout();
+    ));
 }
 
 fn print_skipped_sample(duration: Duration, status_code: StatusCode, payload_size_bytes: usize) {
-    print!(
+    stdout::print(&format!(
         "  {:>6} mbit/s | {:>5} in {:>4}ms -> status: {}  ",
         "N/A",
         format_bytes(payload_size_bytes),
         duration.as_millis(),
         status_code
-    );
-    flush_stdout();
+    ));
 }
 
 fn print_retry_notice(delay: Duration, attempt: u32, max_attempts: u32) {
     let delay_display = format_retry_delay(delay);
     let eta_display = format_retry_eta(delay);
-    print!(
+    stdout::print(&format!(
         " retrying in {}{} ({}/{})  ",
         delay_display, eta_display, attempt, max_attempts
-    );
-    flush_stdout();
+    ));
 }
 
 fn print_transport_failure(duration: Duration, payload_size_bytes: usize, error: &reqwest::Error) {
-    print!(
+    stdout::print(&format!(
         "  {:>6} mbit/s | {:>5} in {:>4}ms -> error: {}  ",
         "N/A",
         format_bytes(payload_size_bytes),
         duration.as_millis(),
         error
-    );
-    flush_stdout();
+    ));
 }
 
 fn format_retry_delay(delay: Duration) -> String {
@@ -994,10 +990,6 @@ fn format_retry_eta(delay: Duration) -> String {
     }
     let eta = Zoned::now().saturating_add(delay);
     format!(" (until {})", eta.strftime("%H:%M:%S %Z"))
-}
-
-fn flush_stdout() {
-    let _ = std::io::stdout().flush();
 }
 
 pub fn fetch_metadata(client: &Client) -> Result<Metadata, MeasurementError> {
