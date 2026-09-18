@@ -49,7 +49,7 @@ fn p1_cli_invalid_ip_arguments_are_usage_errors() {
 #[cfg(unix)]
 #[test]
 fn p1_cli_closed_stdout_is_not_a_panic() {
-    let server = Server::new(|path| Response::normal(path));
+    let server = Server::new(Response::normal);
 
     // JSON mode writes the report once at the end of the run.
     let mut child = server.command(&["-o", "json"]).spawn().unwrap();
