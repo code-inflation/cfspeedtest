@@ -1,10 +1,9 @@
 use cfspeedtest::speedtest;
+use cfspeedtest::stdout;
 use cfspeedtest::OutputFormat;
 use cfspeedtest::SpeedTestCLIOptions;
 use clap::{CommandFactory, Parser};
 use clap_complete::generate;
-use std::io;
-use std::net::IpAddr;
 
 use cfspeedtest::run::RunConfig;
 use speedtest::speed_test_with_config;
@@ -29,7 +28,11 @@ struct CliOptions {
 }
 
 fn print_completions<G: clap_complete::Generator>(gen: G, cmd: &mut clap::Command) {
-    generate(gen, cmd, cmd.get_name().to_string(), &mut io::stdout());
+    // Buffer the script in memory: clap_complete panics on write errors, and
+    // piping the output into e.g. `head` must not abort the process.
+    let mut buffer = Vec::new();
+    generate(gen, cmd, cmd.get_name().to_string(), &mut buffer);
+    stdout::print(&String::from_utf8_lossy(&buffer));
 }
 
 fn main() -> ExitCode {
@@ -45,27 +48,22 @@ fn main() -> ExitCode {
     }
 
     if options.output_format == OutputFormat::StdOut {
-        println!("Starting Cloudflare speed test");
+        stdout::print_line("Starting Cloudflare speed test");
     }
-    let client;
-    if let Some(ref ip) = options.ipv4 {
-        client = reqwest::blocking::Client::builder()
-            .local_address(ip.parse::<IpAddr>().expect("Invalid IPv4 address"))
-            .timeout(std::time::Duration::from_secs(30))
-            .cookie_store(true)
-            .build();
-    } else if let Some(ref ip) = options.ipv6 {
-        client = reqwest::blocking::Client::builder()
-            .local_address(ip.parse::<IpAddr>().expect("Invalid IPv6 address"))
-            .timeout(std::time::Duration::from_secs(30))
-            .cookie_store(true)
-            .build();
-    } else {
-        client = reqwest::blocking::Client::builder()
-            .timeout(std::time::Duration::from_secs(30))
-            .cookie_store(true)
-            .build();
+    let local_address = match cfspeedtest::parse_bound_address(&options.ipv4, &options.ipv6) {
+        Ok(address) => address,
+        Err(message) => {
+            eprintln!("Error: {message}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let mut client_builder = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .cookie_store(true);
+    if let Some(address) = local_address {
+        client_builder = client_builder.local_address(address);
     }
+    let client = client_builder.build();
     let config = RunConfig {
         base_url: cli.server.as_str().trim_end_matches('/').to_string(),
         max_duration: Duration::from_secs(cli.max_duration),

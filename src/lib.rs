@@ -3,8 +3,10 @@ pub mod measurements;
 pub mod progress;
 pub mod run;
 pub mod speedtest;
+pub mod stdout;
 use std::fmt;
 use std::fmt::Display;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 use clap::Parser;
 use clap_complete::Shell;
@@ -63,11 +65,11 @@ pub struct SpeedTestCLIOptions {
     pub verbose: bool,
 
     /// Force IPv4 with provided source IPv4 address or the default IPv4 address bound to the main interface
-    #[clap(long, value_name = "IPv4", num_args = 0..=1, default_missing_value = "0.0.0.0", conflicts_with = "ipv6")]
+    #[clap(long, value_name = "IPv4", num_args = 0..=1, default_missing_value = "0.0.0.0", value_parser = parse_ipv4_address, conflicts_with = "ipv6")]
     pub ipv4: Option<String>,
 
     /// Force IPv6 with provided source IPv6 address or the default IPv6 address bound to the main interface
-    #[clap(long, value_name = "IPv6", num_args = 0..=1, default_missing_value = "::", conflicts_with = "ipv4")]
+    #[clap(long, value_name = "IPv6", num_args = 0..=1, default_missing_value = "::", value_parser = parse_ipv6_address, conflicts_with = "ipv4")]
     pub ipv6: Option<String>,
 
     /// Disables dynamically skipping tests with larger payload sizes if the tests for the previous payload
@@ -104,8 +106,43 @@ fn parse_payload_size(input_string: &str) -> Result<PayloadSize, String> {
     PayloadSize::from(input_string.to_string())
 }
 
+fn parse_ipv4_address(input_string: &str) -> Result<String, String> {
+    match input_string.parse::<Ipv4Addr>() {
+        Ok(_) => Ok(input_string.to_string()),
+        Err(_) => Err(format!("invalid IPv4 address: '{input_string}'")),
+    }
+}
+
+fn parse_ipv6_address(input_string: &str) -> Result<String, String> {
+    match input_string.parse::<Ipv6Addr>() {
+        Ok(_) => Ok(input_string.to_string()),
+        Err(_) => Err(format!("invalid IPv6 address: '{input_string}'")),
+    }
+}
+
 fn parse_output_format(input_string: &str) -> Result<OutputFormat, String> {
     OutputFormat::from(input_string.to_string())
+}
+
+/// Parses the bound address from the CLI options. Returns an error if the
+/// provided address is not a valid IP address.
+pub fn parse_bound_address(
+    ipv4: &Option<String>,
+    ipv6: &Option<String>,
+) -> Result<Option<IpAddr>, String> {
+    if let Some(address) = ipv4 {
+        address
+            .parse::<IpAddr>()
+            .map(Some)
+            .map_err(|_| format!("invalid IPv4 address: '{address}'"))
+    } else if let Some(address) = ipv6 {
+        address
+            .parse::<IpAddr>()
+            .map(Some)
+            .map_err(|_| format!("invalid IPv6 address: '{address}'"))
+    } else {
+        Ok(None)
+    }
 }
 
 #[cfg(test)]
@@ -167,6 +204,51 @@ mod tests {
         assert_eq!(format!("{}", OutputFormat::JsonPretty), "JsonPretty");
         assert_eq!(format!("{}", OutputFormat::StdOut), "StdOut");
         assert_eq!(format!("{}", OutputFormat::None), "None");
+    }
+
+    #[test]
+    fn test_parse_ipv4_address_accepts_valid_addresses() {
+        assert_eq!(parse_ipv4_address("0.0.0.0"), Ok("0.0.0.0".to_string()));
+        assert_eq!(
+            parse_ipv4_address("192.168.1.5"),
+            Ok("192.168.1.5".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_ipv4_address_rejects_invalid_addresses() {
+        assert!(parse_ipv4_address("not-an-ip").is_err());
+        assert!(parse_ipv4_address("999.1.1.1").is_err());
+        // IPv6 addresses belong to --ipv6, not --ipv4.
+        assert!(parse_ipv4_address("::1").is_err());
+    }
+
+    #[test]
+    fn test_parse_ipv6_address_accepts_valid_addresses() {
+        assert_eq!(parse_ipv6_address("::"), Ok("::".to_string()));
+        assert_eq!(parse_ipv6_address("fe80::1"), Ok("fe80::1".to_string()));
+    }
+
+    #[test]
+    fn test_parse_ipv6_address_rejects_invalid_addresses() {
+        assert!(parse_ipv6_address("not-an-ip").is_err());
+        // IPv4 addresses belong to --ipv4, not --ipv6.
+        assert!(parse_ipv6_address("192.168.1.5").is_err());
+    }
+
+    #[test]
+    fn test_parse_bound_address() {
+        assert_eq!(parse_bound_address(&None, &None), Ok(None));
+        assert_eq!(
+            parse_bound_address(&Some("127.0.0.1".to_string()), &None),
+            Ok(Some("127.0.0.1".parse().unwrap()))
+        );
+        assert_eq!(
+            parse_bound_address(&None, &Some("fe80::1".to_string())),
+            Ok(Some("fe80::1".parse().unwrap()))
+        );
+        assert!(parse_bound_address(&Some("not-an-ip".to_string()), &None).is_err());
+        assert!(parse_bound_address(&None, &Some("not-an-ip".to_string())).is_err());
     }
 
     #[test]

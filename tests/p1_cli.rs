@@ -1,6 +1,7 @@
 mod support;
 
 use serde_json::Value;
+use std::process::Stdio;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -14,6 +15,82 @@ fn json(output: &std::process::Output) -> Value {
             String::from_utf8_lossy(&output.stderr)
         )
     })
+}
+
+#[test]
+fn p1_cli_invalid_ip_arguments_are_usage_errors() {
+    for (flag, value, expected) in [
+        ("--ipv4", "not-an-ip", "invalid IPv4 address"),
+        ("--ipv6", "not-an-ip", "invalid IPv6 address"),
+        // An IPv6 address is not valid for --ipv4 and vice versa.
+        ("--ipv4", "::1", "invalid IPv4 address"),
+        ("--ipv6", "127.0.0.1", "invalid IPv6 address"),
+    ] {
+        let output = std::process::Command::new(env!("CARGO_BIN_EXE_cfspeedtest"))
+            .args([flag, value])
+            .env("NO_PROXY", "*")
+            .env("no_proxy", "*")
+            .output()
+            .unwrap();
+        assert_eq!(
+            output.status.code(),
+            Some(2),
+            "unexpected exit status for {flag} {value}"
+        );
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains(expected),
+            "missing '{expected}' for {flag} {value}: {stderr}"
+        );
+        assert!(!String::from_utf8_lossy(&output.stdout).contains("panic"));
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn p1_cli_closed_stdout_is_not_a_panic() {
+    let server = Server::new(Response::normal);
+
+    // JSON mode writes the report once at the end of the run.
+    let mut child = server.command(&["-o", "json"]).spawn().unwrap();
+    drop(child.stdout.take());
+    let output = child.wait_with_output().unwrap();
+    assert_eq!(output.status.code(), Some(0));
+    assert!(
+        output.stderr.is_empty(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // Human mode writes progress continuously during the run.
+    let mut child = server.command(&["-o", "stdout"]).spawn().unwrap();
+    drop(child.stdout.take());
+    let output = child.wait_with_output().unwrap();
+    assert_eq!(output.status.code(), Some(0));
+    assert!(
+        output.stderr.is_empty(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn p1_cli_completion_output_survives_closed_stdout() {
+    let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_cfspeedtest"))
+        .args(["--generate-completion", "bash"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    drop(child.stdout.take());
+    let output = child.wait_with_output().unwrap();
+    assert_eq!(output.status.code(), Some(0));
+    assert!(
+        !String::from_utf8_lossy(&output.stderr).contains("panic"),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 #[test]
