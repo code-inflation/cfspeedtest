@@ -131,24 +131,30 @@ fn p1_cli_help_version_and_completion_survive_closed_stdout() {
 
 #[cfg(target_os = "linux")]
 #[test]
-fn p1_cli_reports_other_stdout_errors_once() {
+fn p1_cli_unexpected_stdout_errors_exit_one_and_report_once() {
     let server = Server::new(Response::normal);
-    let full = std::fs::File::options()
-        .write(true)
-        .open("/dev/full")
-        .unwrap();
-    let output = server
-        .command(&["-o", "stdout"])
-        .stdout(full)
-        .output()
-        .unwrap();
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert_eq!(output.status.code(), Some(0), "{stderr}");
-    assert_eq!(
-        stderr.matches("Failed to write to stdout").count(),
-        1,
-        "{stderr}"
-    );
+    let mut completion = Command::new(env!("CARGO_BIN_EXE_cfspeedtest"));
+    completion.args(["--generate-completion", "bash"]);
+    for mut command in [
+        server.command(&["-o", "stdout"]),
+        server.command(&["-o", "json"]),
+        server.command(&["-o", "json-pretty"]),
+        server.command(&["-o", "csv"]),
+        completion,
+    ] {
+        let full = std::fs::File::options()
+            .write(true)
+            .open("/dev/full")
+            .unwrap();
+        let output = command.stdout(full).output().unwrap();
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_eq!(output.status.code(), Some(1), "{command:?}: {stderr}");
+        assert_eq!(
+            stderr.matches("Failed to write to stdout").count(),
+            1,
+            "{command:?}: {stderr}"
+        );
+    }
 }
 
 fn run_with_closed_stdout(command: &mut Command) -> Output {

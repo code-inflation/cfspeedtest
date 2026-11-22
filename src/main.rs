@@ -61,6 +61,14 @@ fn print_diagnostic(args: fmt::Arguments<'_>) {
     let _ = writeln!(io::stderr().lock(), "{args}");
 }
 
+fn command_exit_code(status: u8) -> ExitCode {
+    if status == 0 && stdout::write_failed() {
+        ExitCode::FAILURE
+    } else {
+        ExitCode::from(status)
+    }
+}
+
 fn main() -> ExitCode {
     env_logger::init();
     let cli = CliOptions::parse();
@@ -72,7 +80,7 @@ fn main() -> ExitCode {
             "Generating completion script for {generator}..."
         ));
         print_completions(generator);
-        return ExitCode::SUCCESS;
+        return command_exit_code(0);
     }
 
     let mut client_builder = reqwest::blocking::Client::builder()
@@ -126,5 +134,5 @@ fn main() -> ExitCode {
             report.status
         ));
     }
-    ExitCode::from(exit_code)
+    command_exit_code(exit_code)
 }

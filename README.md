@@ -81,7 +81,7 @@ Ctrl-C stops new measurements and interrupts retry waits. An in-flight blocking 
 | Exit code | Meaning |
 | --- | --- |
 | 0 | Complete: every attempted payload reached its successful-sample target and all enabled latency probes succeeded. Payloads omitted by normal adaptive stopping do not make a run partial. |
-| 1 | Failed: no valid throughput samples were collected, or CLI initialization failed. |
+| 1 | No valid throughput samples were collected, CLI initialization failed, or an unexpected stdout write error interrupted output from an otherwise successful run. |
 | 2 | Invalid command-line arguments. |
 | 3 | Partial: some valid throughput samples exist, but a sample target was missed or a run limit stopped testing. |
 | 130 | Cancelled; any completed measurements are retained. |
