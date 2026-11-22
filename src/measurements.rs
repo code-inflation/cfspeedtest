@@ -2,10 +2,14 @@ use crate::boxplot;
 use crate::run::SpeedTestReport;
 use crate::speedtest::Metadata;
 use crate::speedtest::TestType;
+use crate::stdout;
 use crate::OutputFormat;
 use indexmap::IndexSet;
 use serde::Serialize;
-use std::{fmt::Display, io};
+use std::{
+    fmt::Display,
+    io::{self, Write},
+};
 
 #[derive(Serialize)]
 struct StatMeasurement {
@@ -69,11 +73,13 @@ pub(crate) fn log_measurements(
     let measurements = &report.measurements;
     let payload_attempt_stats = &report.payload_attempt_stats;
     if output_format == OutputFormat::StdOut {
-        println!("\nSummary Statistics");
+        stdout::print_line(format_args!("\nSummary Statistics"));
         if verbose {
-            println!("Type     Payload |  min/max/avg in mbit/s | attempts/success/skipped");
+            stdout::print_line(format_args!(
+                "Type     Payload |  min/max/avg in mbit/s | attempts/success/skipped",
+            ));
         } else {
-            println!("Type     Payload |  min/max/avg in mbit/s");
+            stdout::print_line(format_args!("Type     Payload |  min/max/avg in mbit/s"));
         }
     }
     let mut stat_measurements: Vec<StatMeasurement> = Vec::new();
@@ -96,25 +102,31 @@ pub(crate) fn log_measurements(
         ))
     });
     match output_format {
-        OutputFormat::Csv => {
-            let mut wtr = csv::Writer::from_writer(io::stdout());
+        OutputFormat::Csv => stdout::write(|stdout| {
+            let mut writer = csv::Writer::from_writer(stdout);
             for measurement in &stat_measurements {
-                wtr.serialize(measurement).unwrap();
+                writer
+                    .serialize(measurement)
+                    .map_err(|error| match error.into_kind() {
+                        // csv's conversion to io::Error would hide BrokenPipe.
+                        csv::ErrorKind::Io(error) => error,
+                        kind => io::Error::other(format!("Failed to serialize CSV row: {kind:?}")),
+                    })?;
             }
-            wtr.flush().unwrap();
-        }
-        OutputFormat::Json => {
+            writer.flush()
+        }),
+        OutputFormat::Json | OutputFormat::JsonPretty => {
             let output = compose_report_json(&stat_measurements, report);
-            serde_json::to_writer(io::stdout(), &output).unwrap();
-            println!();
+            stdout::write(|stdout| {
+                if output_format == OutputFormat::JsonPretty {
+                    serde_json::to_writer_pretty(&mut *stdout, &output)?;
+                } else {
+                    serde_json::to_writer(&mut *stdout, &output)?;
+                }
+                writeln!(stdout)
+            });
         }
-        OutputFormat::JsonPretty => {
-            let output = compose_report_json(&stat_measurements, report);
-            serde_json::to_writer_pretty(io::stdout(), &output).unwrap();
-            println!();
-        }
-        OutputFormat::StdOut => {}
-        OutputFormat::None => {}
+        OutputFormat::StdOut | OutputFormat::None => {}
     }
 }
 
@@ -222,22 +234,22 @@ fn log_measurements_by_test_type(
             });
             if output_format == OutputFormat::StdOut {
                 if verbose {
-                    println!(
+                    stdout::print_line(format_args!(
                         "{fmt_test_type:<9} {formatted_payload:<7}|  min {min:<7.2} max {max:<7.2} avg {avg:<7.2} | {attempts:>3}/{successes:>3}/{skipped:>3}"
-                    );
+                    ));
                 } else {
-                    println!(
+                    stdout::print_line(format_args!(
                         "{fmt_test_type:<9} {formatted_payload:<7}|  min {min:<7.2} max {max:<7.2} avg {avg:<7.2}"
-                    );
+                    ));
                 }
                 if successes < target_successes {
-                    println!(
+                    stdout::print_line(format_args!(
                         "                    insufficient samples: collected {successes}/{target_successes} successful runs"
-                    );
+                    ));
                 }
                 if verbose {
                     let plot = boxplot::render_plot(min, q1, median, q3, max);
-                    println!("{plot}\n");
+                    stdout::print_line(format_args!("{plot}\n"));
                 }
             }
         } else {
@@ -257,13 +269,13 @@ fn log_measurements_by_test_type(
             });
             if output_format == OutputFormat::StdOut {
                 if verbose {
-                    println!(
+                    stdout::print_line(format_args!(
                         "{fmt_test_type:<9} {formatted_payload:<7}|  min N/A     max N/A     avg N/A     | {attempts:>3}/{successes:>3}/{skipped:>3} (insufficient samples)"
-                    );
+                    ));
                 } else {
-                    println!(
+                    stdout::print_line(format_args!(
                         "{fmt_test_type:<9} {formatted_payload:<7}|  min N/A     max N/A     avg N/A     (insufficient samples)"
-                    );
+                    ));
                 }
             }
         }

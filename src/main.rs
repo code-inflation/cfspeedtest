@@ -1,13 +1,14 @@
-use cfspeedtest::speedtest;
-use cfspeedtest::OutputFormat;
-use cfspeedtest::SpeedTestCLIOptions;
+use cfspeedtest::run::RunConfig;
+use cfspeedtest::speedtest::speed_test_with_config;
+use cfspeedtest::stdout;
+use cfspeedtest::{OutputFormat, SpeedTestCLIOptions};
+use clap::error::ErrorKind;
 use clap::{CommandFactory, Parser};
 use clap_complete::generate;
-use std::io;
+use std::error::Error;
+use std::fmt;
+use std::io::{self, Write};
 use std::net::IpAddr;
-
-use cfspeedtest::run::RunConfig;
-use speedtest::speed_test_with_config;
 use std::process::ExitCode;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
@@ -28,44 +29,76 @@ struct CliOptions {
     max_retry_wait: u64,
 }
 
-fn print_completions<G: clap_complete::Generator>(gen: G, cmd: &mut clap::Command) {
-    generate(gen, cmd, cmd.get_name().to_string(), &mut io::stdout());
+fn print_completions(generator: clap_complete::Shell) {
+    let mut cmd = CliOptions::command();
+    let name = cmd.get_name().to_owned();
+    // clap_complete's generators assume writes succeed.
+    let mut buffer = Vec::new();
+    generate(generator, &mut cmd, name, &mut buffer);
+    stdout::write(|stdout| stdout.write_all(&buffer));
+}
+
+fn local_address(options: &SpeedTestCLIOptions) -> Option<IpAddr> {
+    let (flag, family, input, address) = if let Some(input) = &options.ipv4 {
+        ("--ipv4", "IPv4", input, input.parse().map(IpAddr::V4))
+    } else if let Some(input) = &options.ipv6 {
+        ("--ipv6", "IPv6", input, input.parse().map(IpAddr::V6))
+    } else {
+        return None;
+    };
+    match address {
+        Ok(address) => Some(address),
+        Err(_) => CliOptions::command()
+            .error(
+                ErrorKind::ValueValidation,
+                format!("invalid {family} address '{input}' for {flag}"),
+            )
+            .exit(),
+    }
+}
+
+fn print_diagnostic(args: fmt::Arguments<'_>) {
+    let _ = writeln!(io::stderr().lock(), "{args}");
+}
+
+fn command_exit_code(status: u8) -> ExitCode {
+    if status == 0 && stdout::write_failed() {
+        ExitCode::FAILURE
+    } else {
+        ExitCode::from(status)
+    }
 }
 
 fn main() -> ExitCode {
     env_logger::init();
     let cli = CliOptions::parse();
     let options = cli.options;
+    let local_address = local_address(&options);
 
     if let Some(generator) = options.completion {
-        let mut cmd = CliOptions::command();
-        eprintln!("Generating completion script for {generator}...");
-        print_completions(generator, &mut cmd);
-        return ExitCode::SUCCESS;
+        print_diagnostic(format_args!(
+            "Generating completion script for {generator}..."
+        ));
+        print_completions(generator);
+        return command_exit_code(0);
     }
 
-    if options.output_format == OutputFormat::StdOut {
-        println!("Starting Cloudflare speed test");
+    let mut client_builder = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .cookie_store(true);
+    if let Some(address) = local_address {
+        client_builder = client_builder.local_address(address);
     }
-    let client;
-    if let Some(ref ip) = options.ipv4 {
-        client = reqwest::blocking::Client::builder()
-            .local_address(ip.parse::<IpAddr>().expect("Invalid IPv4 address"))
-            .timeout(std::time::Duration::from_secs(30))
-            .cookie_store(true)
-            .build();
-    } else if let Some(ref ip) = options.ipv6 {
-        client = reqwest::blocking::Client::builder()
-            .local_address(ip.parse::<IpAddr>().expect("Invalid IPv6 address"))
-            .timeout(std::time::Duration::from_secs(30))
-            .cookie_store(true)
-            .build();
-    } else {
-        client = reqwest::blocking::Client::builder()
-            .timeout(std::time::Duration::from_secs(30))
-            .cookie_store(true)
-            .build();
-    }
+    let client = match client_builder.build() {
+        Ok(client) => client,
+        Err(error) => {
+            print_diagnostic(format_args!("Failed to initialize HTTP client: {error}"));
+            if let Some(source) = error.source() {
+                print_diagnostic(format_args!("  {source}"));
+            }
+            return ExitCode::FAILURE;
+        }
+    };
     let config = RunConfig {
         base_url: cli.server.as_str().trim_end_matches('/').to_string(),
         max_duration: Duration::from_secs(cli.max_duration),
@@ -76,28 +109,30 @@ fn main() -> ExitCode {
     if let Err(error) = ctrlc::set_handler(move || {
         cancelled.store(true, Ordering::SeqCst);
     }) {
-        eprintln!("Failed to install cancellation handler: {error}");
+        print_diagnostic(format_args!(
+            "Failed to install cancellation handler: {error}"
+        ));
         return ExitCode::FAILURE;
     }
-    let report = speed_test_with_config(
-        client.expect("Failed to initialize reqwest client"),
-        options,
-        config,
-    );
+    if options.output_format == OutputFormat::StdOut {
+        stdout::write(|stdout| writeln!(stdout, "Starting Cloudflare speed test"));
+    }
+    let report = speed_test_with_config(client, options, config);
     for error in &report.errors {
         let payload = error
             .payload_size
             .map_or(String::new(), |bytes| format!(" ({bytes} bytes)"));
-        eprintln!("{}{}: {}", error.stage, payload, error.error);
+        print_diagnostic(format_args!("{}{}: {}", error.stage, payload, error.error));
     }
     if let Some(reason) = report.stop_reason {
-        eprintln!("Run stopped: {reason:?}");
+        print_diagnostic(format_args!("Run stopped: {reason:?}"));
     }
-    if report.exit_code() != 0 {
-        eprintln!(
+    let exit_code = report.exit_code();
+    if exit_code != 0 {
+        print_diagnostic(format_args!(
             "Run status: {:?}; completed measurements are retained in the output",
             report.status
-        );
+        ));
     }
-    ExitCode::from(report.exit_code())
+    command_exit_code(exit_code)
 }

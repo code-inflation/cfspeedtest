@@ -3,6 +3,8 @@ pub mod measurements;
 pub mod progress;
 pub mod run;
 pub mod speedtest;
+#[doc(hidden)]
+pub mod stdout;
 use std::fmt;
 use std::fmt::Display;
 
