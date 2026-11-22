@@ -142,6 +142,8 @@ pub fn finish(mut child: Child, timeout: Duration) -> Output {
 }
 
 fn read_request(stream: &mut TcpStream) -> Option<String> {
+    // On macOS, accepted sockets can inherit the listener's nonblocking mode.
+    stream.set_nonblocking(false).unwrap();
     stream
         .set_read_timeout(Some(Duration::from_secs(1)))
         .unwrap();

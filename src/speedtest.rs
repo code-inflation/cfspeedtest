@@ -136,7 +136,7 @@ pub fn speed_test_with_config(
     };
     if options.output_format == OutputFormat::StdOut {
         if let Some(metadata) = &metadata {
-            stdout::print_line(&metadata.to_string());
+            stdout::print_line(format_args!("{metadata}"));
         }
     }
     let latency = run_latency_with_control(
@@ -265,12 +265,12 @@ fn run_latency_with_control(
     report.finish();
     if output_format == OutputFormat::StdOut && nr_latency_tests > 0 {
         if let Some(avg) = report.avg_latency_ms {
-            stdout::print_line(&format!(
+            stdout::print_line(format_args!(
                 "\nAvg GET request latency {avg:.2} ms ({}/{} valid samples)\n",
                 report.successes, report.target_samples
             ));
         } else {
-            stdout::print_line(&format!(
+            stdout::print_line(format_args!(
                 "\nAvg GET request latency N/A (0/{} valid samples)\n",
                 report.target_samples
             ));
@@ -428,7 +428,7 @@ pub fn run_tests(
                 nr_tests,
                 nr_tests,
             );
-            stdout::print_line("");
+            stdout::print_line(format_args!(""));
         }
         if !disable_dynamic_max_payload_size && start.elapsed() > TIME_THRESHOLD {
             log::info!("Exceeded threshold");
@@ -625,7 +625,7 @@ fn run_tests_with_control<S: Fn(Duration)>(
 
         if options.output_format == OutputFormat::StdOut {
             print_progress(&label, successes, options.nr_tests);
-            stdout::print_line("");
+            stdout::print_line(format_args!(""));
         }
 
         payload_attempt_stats.push(PayloadAttemptStats {
@@ -931,7 +931,7 @@ fn compute_retry_delay(retry_count: u32, retry_after: Option<Duration>) -> Durat
 }
 
 fn print_current_speed(mbits: f64, duration: Duration, payload_size_bytes: usize) {
-    stdout::print(&format!(
+    stdout::print(format_args!(
         "  {:>6.2} mbit/s | {:>5} in {:>4}ms  ",
         mbits,
         format_bytes(payload_size_bytes),
@@ -940,7 +940,7 @@ fn print_current_speed(mbits: f64, duration: Duration, payload_size_bytes: usize
 }
 
 fn print_skipped_sample(duration: Duration, status_code: StatusCode, payload_size_bytes: usize) {
-    stdout::print(&format!(
+    stdout::print(format_args!(
         "  {:>6} mbit/s | {:>5} in {:>4}ms -> status: {}  ",
         "N/A",
         format_bytes(payload_size_bytes),
@@ -952,14 +952,14 @@ fn print_skipped_sample(duration: Duration, status_code: StatusCode, payload_siz
 fn print_retry_notice(delay: Duration, attempt: u32, max_attempts: u32) {
     let delay_display = format_retry_delay(delay);
     let eta_display = format_retry_eta(delay);
-    stdout::print(&format!(
+    stdout::print(format_args!(
         " retrying in {}{} ({}/{})  ",
         delay_display, eta_display, attempt, max_attempts
     ));
 }
 
 fn print_transport_failure(duration: Duration, payload_size_bytes: usize, error: &reqwest::Error) {
-    stdout::print(&format!(
+    stdout::print(format_args!(
         "  {:>6} mbit/s | {:>5} in {:>4}ms -> error: {}  ",
         "N/A",
         format_bytes(payload_size_bytes),
@@ -1088,6 +1088,7 @@ mod tests {
             while idx < responses.len() {
                 match listener.accept() {
                     Ok((mut stream, _)) => {
+                        stream.set_nonblocking(false).unwrap();
                         stream
                             .set_read_timeout(Some(Duration::from_secs(2)))
                             .unwrap();

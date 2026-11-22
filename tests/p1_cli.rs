@@ -1,13 +1,13 @@
 mod support;
 
 use serde_json::Value;
-use std::process::Stdio;
+use std::process::{Command, Output, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use support::{Response, Server};
 
-fn json(output: &std::process::Output) -> Value {
+fn json(output: &Output) -> Value {
     serde_json::from_slice(&output.stdout).unwrap_or_else(|error| {
         panic!(
             "{error}: stdout={}, stderr={}",
@@ -26,10 +26,8 @@ fn p1_cli_invalid_ip_arguments_are_usage_errors() {
         ("--ipv4", "::1", "invalid IPv4 address"),
         ("--ipv6", "127.0.0.1", "invalid IPv6 address"),
     ] {
-        let output = std::process::Command::new(env!("CARGO_BIN_EXE_cfspeedtest"))
+        let output = Command::new(env!("CARGO_BIN_EXE_cfspeedtest"))
             .args([flag, value])
-            .env("NO_PROXY", "*")
-            .env("no_proxy", "*")
             .output()
             .unwrap();
         assert_eq!(
@@ -42,55 +40,126 @@ fn p1_cli_invalid_ip_arguments_are_usage_errors() {
             stderr.contains(expected),
             "missing '{expected}' for {flag} {value}: {stderr}"
         );
-        assert!(!String::from_utf8_lossy(&output.stdout).contains("panic"));
+        assert!(stderr.contains("Usage:"), "{stderr}");
+        assert!(output.stdout.is_empty());
     }
 }
 
-#[cfg(unix)]
 #[test]
-fn p1_cli_closed_stdout_is_not_a_panic() {
+fn p1_cli_valid_ip_arguments_are_accepted() {
     let server = Server::new(Response::normal);
+    for args in [&["--ipv4"][..], &["--ipv4", "127.0.0.1"]] {
+        assert_eq!(server.run(args).status.code(), Some(0));
+    }
 
-    // JSON mode writes the report once at the end of the run.
-    let mut child = server.command(&["-o", "json"]).spawn().unwrap();
-    drop(child.stdout.take());
-    let output = child.wait_with_output().unwrap();
+    // Completion generation validates IPv6 without requiring network access.
+    let output = Command::new(env!("CARGO_BIN_EXE_cfspeedtest"))
+        .args(["--ipv6", "--generate-completion", "bash"])
+        .output()
+        .unwrap();
     assert_eq!(output.status.code(), Some(0));
+    assert!(String::from_utf8_lossy(&output.stdout).contains("cfspeedtest"));
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn p1_cli_client_initialization_errors_exit_cleanly() {
+    let output = Command::new(env!("CARGO_BIN_EXE_cfspeedtest"))
+        .args(["-o", "json"])
+        .env("SSL_CERT_FILE", "/dev/null")
+        .env("SSL_CERT_DIR", "/dev/null")
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(output.status.code(), Some(1), "{stderr}");
     assert!(
-        output.stderr.is_empty(),
-        "stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
+        stderr.contains("Failed to initialize HTTP client"),
+        "{stderr}"
     );
+    assert!(stderr.contains("No CA certificates"), "{stderr}");
+    assert!(output.stdout.is_empty());
+}
 
-    // Human mode writes progress continuously during the run.
-    let mut child = server.command(&["-o", "stdout"]).spawn().unwrap();
-    drop(child.stdout.take());
-    let output = child.wait_with_output().unwrap();
-    assert_eq!(output.status.code(), Some(0));
-    assert!(
-        output.stderr.is_empty(),
-        "stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
+#[test]
+fn p1_cli_closed_stdout_preserves_a_successful_run() {
+    let server = Server::new(Response::normal);
+    for format in ["stdout", "json", "json-pretty", "csv"] {
+        let output = run_with_closed_stdout(&mut server.command(&["-o", format]));
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_eq!(output.status.code(), Some(0), "{format}: {stderr}");
+        assert!(
+            !stderr.contains("Failed to write to stdout"),
+            "{format}: {stderr}"
+        );
+    }
+}
+
+#[test]
+fn p1_cli_closed_stdout_preserves_a_failed_run() {
+    let server = Server::new(|path| {
+        if path.starts_with("/__down") {
+            Response::new(403, "forbidden")
+        } else {
+            Response::normal(path)
+        }
+    });
+    let output = run_with_closed_stdout(&mut server.command(&[]));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(output.status.code(), Some(1), "{stderr}");
+    assert!(stderr.contains("Run status: Failed"), "{stderr}");
+    assert!(!stderr.contains("Failed to write to stdout"), "{stderr}");
+}
+
+#[test]
+fn p1_cli_help_version_and_completion_survive_closed_stdout() {
+    for args in [
+        &["--help"][..],
+        &["--version"],
+        &["--generate-completion", "bash"],
+    ] {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_cfspeedtest"));
+        command.args(args);
+        let output = run_with_closed_stdout(&mut command);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_eq!(output.status.code(), Some(0), "{args:?}: {stderr}");
+        assert!(
+            !stderr.contains("Failed to write to stdout"),
+            "{args:?}: {stderr}"
+        );
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn p1_cli_reports_other_stdout_errors_once() {
+    let server = Server::new(Response::normal);
+    let full = std::fs::File::options()
+        .write(true)
+        .open("/dev/full")
+        .unwrap();
+    let output = server
+        .command(&["-o", "stdout"])
+        .stdout(full)
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(output.status.code(), Some(0), "{stderr}");
+    assert_eq!(
+        stderr.matches("Failed to write to stdout").count(),
+        1,
+        "{stderr}"
     );
 }
 
-#[cfg(unix)]
-#[test]
-fn p1_cli_completion_output_survives_closed_stdout() {
-    let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_cfspeedtest"))
-        .args(["--generate-completion", "bash"])
-        .stdout(Stdio::piped())
+fn run_with_closed_stdout(command: &mut Command) -> Output {
+    let (reader, writer) = std::io::pipe().unwrap();
+    drop(reader);
+    let child = command
+        .stdout(writer)
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    drop(child.stdout.take());
-    let output = child.wait_with_output().unwrap();
-    assert_eq!(output.status.code(), Some(0));
-    assert!(
-        !String::from_utf8_lossy(&output.stderr).contains("panic"),
-        "stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    support::finish(child, Duration::from_secs(4))
 }
 
 #[test]
@@ -248,17 +317,12 @@ fn p1_cli_deadline_bounds_body_reads() {
     let server = Server::new(|path| {
         let mut r = Response::normal(path);
         if path.starts_with("/__down") {
-            r.delay = Duration::from_secs(2);
+            // The fixture's watchdog fails the test if the CLI waits for the body.
+            r.delay = Duration::MAX;
         }
         r
     });
-    let start = Instant::now();
     let output = server.run(&["--max-duration", "1"]);
-    assert!(
-        start.elapsed() < Duration::from_millis(1600),
-        "elapsed={:?}",
-        start.elapsed()
-    );
     assert_eq!(output.status.code(), Some(1));
     let report = json(&output);
     assert_eq!(report["stop_reason"], "deadline");
@@ -270,7 +334,7 @@ fn p1_cli_upload_body_timeout_is_not_success() {
     let server = Server::new(|path| {
         let mut response = Response::normal(path);
         if path == "/__up" {
-            response.delay = Duration::from_secs(2);
+            response.delay = Duration::MAX;
         }
         response
     });
@@ -289,13 +353,11 @@ fn p1_cli_metadata_body_is_covered_by_overall_deadline() {
         observed.fetch_add(1, Ordering::SeqCst);
         let mut r = Response::normal(path);
         if path == "/cdn-cgi/trace" {
-            r.delay = Duration::from_secs(2);
+            r.delay = Duration::MAX;
         }
         r
     });
-    let start = Instant::now();
     let output = server.run(&["--max-duration", "1"]);
-    assert!(start.elapsed() < Duration::from_millis(1600));
     assert_eq!(output.status.code(), Some(1));
     let report = json(&output);
     assert_eq!(report["stop_reason"], "deadline");
