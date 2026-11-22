@@ -9,7 +9,7 @@ use crate::run::{
 };
 use crate::OutputFormat;
 use crate::SpeedTestCLIOptions;
-use jiff::Zoned;
+use jiff::ZonedDateTime;
 use log;
 use regex::Regex;
 use reqwest::{blocking::Client, header::RETRY_AFTER, StatusCode};
@@ -992,7 +992,7 @@ fn format_retry_eta(delay: Duration) -> String {
     if delay.as_secs() < 60 {
         return String::new();
     }
-    let eta = Zoned::now().saturating_add(delay);
+    let eta = ZonedDateTime::now().saturating_add(delay);
     format!(" (until {})", eta.strftime("%H:%M:%S %Z"))
 }
 
