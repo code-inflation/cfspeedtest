@@ -13,18 +13,18 @@ on:
 jobs:
   cargo_audit:
     runs-on: ubuntu-latest
+    env:
+      CARGO_AUDIT_VERSION: '0.23.0'
     steps:
       - uses: actions/checkout@v6
       - name: Cache cargo-audit
+        id: cache-cargo-audit
         uses: actions/cache@v5
         with:
           path: ~/.cargo/bin/cargo-audit
-          key: cargo-audit-${{ runner.os }}-v0.21.2
+          key: cargo-audit-${{ runner.os }}-${{ runner.arch }}-v${{ env.CARGO_AUDIT_VERSION }}
       - name: Install cargo audit
-        run: |
-          if ! command -v cargo-audit &> /dev/null; then
-            cargo install cargo-audit
-          fi
+        if: steps.cache-cargo-audit.outputs.cache-hit != 'true'
+        run: cargo install cargo-audit --locked --version "$CARGO_AUDIT_VERSION"
       - name: Run Cargo Audit
         run: cargo audit
-    continue-on-error: true
